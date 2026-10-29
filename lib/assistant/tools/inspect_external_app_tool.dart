@@ -11,3 +11,4 @@ final FunctionDeclaration inspectExternalAppTool = FunctionDeclaration(
   },
   optionalParameters: ['switchToExternal'],
 );
+

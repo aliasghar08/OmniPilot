@@ -51,3 +51,4 @@ class OmniPilotAppBar extends StatelessWidget implements PreferredSizeWidget {
     );
   }
 }
+

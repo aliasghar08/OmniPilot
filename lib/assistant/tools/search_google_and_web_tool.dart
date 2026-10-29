@@ -14,3 +14,4 @@ final FunctionDeclaration searchGoogleAndWebTool = FunctionDeclaration(
   },
   optionalParameters: ['openInBrowser'],
 );
+

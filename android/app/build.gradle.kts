@@ -25,22 +25,22 @@ if (hasOwnerReleaseKeystore) {
 }
 
 gradle.taskGraph.whenReady {
-    val isReleasePublishingTask = allTasks.any { task ->
-        val name = task.name.lowercase()
-        (name.contains("release") && (name.contains("bundle") || name.contains("assemble") || name.contains("publish")))
+    val requestedTasks = gradle.startParameter.taskNames.map { it.lowercase() }
+    val isStorePublishTask = requestedTasks.any { task ->
+        task.contains("bundle") || (task.contains("publish") && !task.contains("local"))
     }
-    if (isReleasePublishingTask && !hasOwnerReleaseKeystore) {
+    if (isStorePublishTask && !hasOwnerReleaseKeystore) {
         throw GradleException(
             """
             ================================================================================
-            SECURITY & DMCA OWNERSHIP LOCK — UNAUTHORIZED RELEASE BUILD BLOCKED
+            SECURITY & DMCA OWNERSHIP LOCK — UNAUTHORIZED RELEASE STORE PUBLISH BLOCKED
             ================================================================================
             OmniPilot is the proprietary intellectual property of:
               Owner : Ali Asghar
               Email : aliasgharinnocent@yahoo.com
               Notice: DMCA Protected · All Commercial & Store Distribution Rights Reserved
 
-            Production release builds (assembleRelease / bundleRelease) require the owner's
+            Production store release bundles (bundleRelease / publish) require the owner's
             private hardware-backed signing keystore (`android/key.properties`).
             Unauthorized Play Store / App Store publishing is strictly prohibited.
             ================================================================================

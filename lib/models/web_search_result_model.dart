@@ -88,3 +88,4 @@ class WebSearchResult {
     return sb.toString().trim();
   }
 }
+

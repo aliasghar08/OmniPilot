@@ -91,3 +91,4 @@ class AssistantChatConsole extends StatelessWidget {
     );
   }
 }
+

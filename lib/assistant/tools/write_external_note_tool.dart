@@ -20,3 +20,4 @@ final FunctionDeclaration writeExternalNoteTool = FunctionDeclaration(
   },
   optionalParameters: ['noteTitle', 'createNewNoteFirst', 'append'],
 );
+

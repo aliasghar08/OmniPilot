@@ -30,3 +30,4 @@ final FunctionDeclaration writeFirestoreTool = FunctionDeclaration(
     'ratioPercentage',
   ],
 );
+

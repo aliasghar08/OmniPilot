@@ -81,3 +81,4 @@ class LiveAttendanceSummaryBanner extends StatelessWidget {
     );
   }
 }
+

@@ -9,3 +9,4 @@ final FunctionDeclaration toggleExternalCheckableTool = FunctionDeclaration(
     'checked': Schema.boolean(description: 'Desired state: true for checked/on, false for unchecked/off'),
   },
 );
+

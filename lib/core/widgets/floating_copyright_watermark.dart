@@ -69,3 +69,4 @@ class FloatingCopyrightWatermark extends StatelessWidget {
     );
   }
 }
+

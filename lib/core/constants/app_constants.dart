@@ -70,3 +70,4 @@ class AppConstants {
       '• **📋 Complex Period Attendance Form**: I can populate Dropdowns, Radio Buttons, Checkboxes, Switches, Date Ranges, Sliders, and Period Counts.\n'
       '• **🤖 Universal Android Control**: Turn on the Floating Bubble to command me directly over any screen!';
 }
+

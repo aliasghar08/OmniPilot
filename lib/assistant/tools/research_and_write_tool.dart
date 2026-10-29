@@ -14,3 +14,4 @@ final FunctionDeclaration researchAndWriteToExternalAppTool = FunctionDeclaratio
   },
   optionalParameters: ['createNewNoteTab'],
 );
+

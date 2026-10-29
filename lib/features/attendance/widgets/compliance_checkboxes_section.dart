@@ -82,3 +82,4 @@ class ComplianceCheckboxesSection extends StatelessWidget {
     );
   }
 }
+

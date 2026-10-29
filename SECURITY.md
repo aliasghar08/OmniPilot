@@ -56,3 +56,4 @@ We take the security of **OmniPilot** seriously. If you discover a security vuln
 - **Initial Acknowledgment:** Within 48 hours
 - **Triage & Severity Assessment:** Within 5 business days
 - **Patch & Disclosure:** Coordinated after fix verification
+

@@ -112,3 +112,4 @@ class PeriodCohortDropdownsSection extends StatelessWidget {
     );
   }
 }
+

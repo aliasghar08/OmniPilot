@@ -122,3 +122,4 @@ class StudentIdentityCountsSection extends StatelessWidget {
     );
   }
 }
+

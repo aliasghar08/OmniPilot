@@ -12,3 +12,4 @@ class ChatMessageModel {
 
   bool get isUser => sender == 'user';
 }
+

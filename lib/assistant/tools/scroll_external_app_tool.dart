@@ -8,3 +8,4 @@ final FunctionDeclaration scrollExternalAppTool = FunctionDeclaration(
     'direction': Schema.string(description: 'Direction to scroll: "down", "up", "left", or "right"'),
   },
 );
+

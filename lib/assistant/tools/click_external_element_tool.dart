@@ -14,3 +14,4 @@ final FunctionDeclaration clickExternalElementTool = FunctionDeclaration(
   },
   optionalParameters: ['longPress'],
 );
+
