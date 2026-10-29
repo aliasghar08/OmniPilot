@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "ADB Deploy & Auto-Configure",
+      "type": "shell",
+      "command": "chmod +x scripts/deploy.sh && ./scripts/deploy.sh",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": true,
+        "panel": "shared"
+      }
+    }
+  ]
+}
