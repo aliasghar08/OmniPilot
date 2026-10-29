@@ -1,0 +1,51 @@
+import 'package:firebase_ai/firebase_ai.dart';
+
+/// Tool 5: Universal Form & Field Writer for Any App
+final FunctionDeclaration fillExternalAppTool = FunctionDeclaration(
+  'fillExternalAppFields',
+  'Writes text into any input fields of an Android app and verifies the writes. Supports complex multi-field period attendance forms, contacts, school portals, web forms, and notes.',
+  parameters: {
+    'studentName': Schema.string(description: 'Full name or First name to fill'),
+    'lastName': Schema.string(description: 'Last name or surname if separate field exists'),
+    'rollNo': Schema.string(description: 'Roll number, registration ID, or phone number'),
+    'classGrade': Schema.string(description: 'Class, grade, department, section, or company'),
+    'startDate': Schema.string(description: 'Period start date (e.g. 2026-10-01)'),
+    'endDate': Schema.string(description: 'Period end date (e.g. 2026-10-31)'),
+    'totalWorkingDays': Schema.string(description: 'Total working days in period'),
+    'daysPresent': Schema.string(description: 'Days present in period'),
+    'approvedLeaves': Schema.string(description: 'Approved leave days in period'),
+    'absentDays': Schema.string(description: 'Unexcused absent days in period'),
+    'lateDays': Schema.string(description: 'Late arrivals count in period'),
+    'phone': Schema.string(description: 'Phone or mobile number'),
+    'email': Schema.string(description: 'Email address'),
+    'status': Schema.string(description: 'Attendance status, advisor remarks, or notes'),
+    'customFieldsJson': Schema.string(
+      description: 'Optional JSON object string mapping any exact field label or index (#0, #1) to value',
+    ),
+    'append': Schema.boolean(
+      description: 'If true, appends to existing text instead of replacing it.',
+    ),
+    'submitButton': Schema.string(
+      description: 'Optional button label to click after filling (e.g., "Save", "Submit", "Save Period Record").',
+    ),
+  },
+  optionalParameters: [
+    'studentName',
+    'lastName',
+    'rollNo',
+    'classGrade',
+    'startDate',
+    'endDate',
+    'totalWorkingDays',
+    'daysPresent',
+    'approvedLeaves',
+    'absentDays',
+    'lateDays',
+    'phone',
+    'email',
+    'status',
+    'customFieldsJson',
+    'append',
+    'submitButton',
+  ],
+);

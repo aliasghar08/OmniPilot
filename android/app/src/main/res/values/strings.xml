@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OmniPilot</string>
+    <string name="accessibility_service_label">OmniPilot Service</string>
+    <string name="accessibility_service_description">Enables OmniPilot to assist with inspecting input fields, checking existing writes, and filling forms across Android applications.</string>
+</resources>
