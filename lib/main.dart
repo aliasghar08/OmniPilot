@@ -26,6 +26,13 @@ void main() async {
     debugPrint('App Check initialization note: $e');
   }
 
+  // Auto-initialize demo license document in Firestore if missing
+  try {
+    await DemoLicenseService().checkAndInitializeLicense();
+  } catch (e) {
+    debugPrint('Demo license initialization note: $e');
+  }
+
   runApp(const OmniPilotApp());
 }
 
