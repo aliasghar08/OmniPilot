@@ -124,3 +124,4 @@ When completing the **Data Safety** section in the Google Play Console:
 ### Security Practices
 - **Data Encrypted in Transit?** Yes (All cloud communication uses HTTPS / TLS).
 - **Can users request data deletion?** Yes (Users can email `aliasgharinnocent@yahoo.com` to request complete record deletion).
+
