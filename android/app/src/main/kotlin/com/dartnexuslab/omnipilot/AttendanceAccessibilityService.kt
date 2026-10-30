@@ -50,6 +50,21 @@ class AttendanceAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         Log.d(TAG, "AttendanceAccessibilityService Connected")
+
+        // Auto-launch floating overlay bubble if overlay permission is already granted
+        try {
+            if (android.provider.Settings.canDrawOverlays(this) && !FloatingBubbleService.isRunning) {
+                val intent = Intent(this, FloatingBubbleService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent)
+                } else {
+                    startService(intent)
+                }
+                Log.d(TAG, "Auto-started FloatingBubbleService on Accessibility connect")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to auto-start floating bubble: ${e.message}")
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
