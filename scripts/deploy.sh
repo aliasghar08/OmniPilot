@@ -8,8 +8,8 @@ if ! command -v adb &> /dev/null; then
     fi
 fi
 
-PACKAGE_NAME="com.attendancecopilot.attendance_copilot"
-SERVICE_NAME="com.attendancecopilot.attendance_copilot.AttendanceAccessibilityService"
+PACKAGE_NAME="com.dartnexuslab.omnipilot"
+SERVICE_NAME="com.dartnexuslab.omnipilot.AttendanceAccessibilityService"
 APK_PATH="build/app/outputs/flutter-apk/app-release.apk"
 
 echo "=== 1. Checking ADB Device Connection ==="

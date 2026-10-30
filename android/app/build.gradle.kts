@@ -27,7 +27,7 @@ if (hasOwnerReleaseKeystore) {
 gradle.taskGraph.whenReady {
     val requestedTasks = gradle.startParameter.taskNames.map { it.lowercase() }
     val isStorePublishTask = requestedTasks.any { task ->
-        task.contains("bundle") || (task.contains("publish") && !task.contains("local"))
+        (task.contains("publish") && !task.contains("local")) || task.contains("appbundlepublish")
     }
     if (isStorePublishTask && !hasOwnerReleaseKeystore) {
         throw GradleException(
@@ -40,7 +40,7 @@ gradle.taskGraph.whenReady {
               Email : aliasgharinnocent@yahoo.com
               Notice: DMCA Protected · All Commercial & Store Distribution Rights Reserved
 
-            Production store release bundles (bundleRelease / publish) require the owner's
+            Production store release bundles (publish) require the owner's
             private hardware-backed signing keystore (`android/key.properties`).
             Unauthorized Play Store / App Store publishing is strictly prohibited.
             ================================================================================
@@ -50,7 +50,7 @@ gradle.taskGraph.whenReady {
 }
 
 android {
-    namespace = "com.attendancecopilot.attendance_copilot"
+    namespace = "com.dartnexuslab.omnipilot"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -60,7 +60,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.attendancecopilot.attendance_copilot"
+        applicationId = "com.dartnexuslab.omnipilot"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

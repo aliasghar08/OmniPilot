@@ -1,4 +1,4 @@
-package com.attendancecopilot.attendance_copilot
+package com.dartnexuslab.omnipilot
 
 import android.content.Intent
 import android.net.Uri

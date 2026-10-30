@@ -1,4 +1,4 @@
-package com.attendancecopilot.attendance_copilot
+package com.dartnexuslab.omnipilot
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
@@ -39,7 +39,7 @@ class AttendanceAccessibilityService : AccessibilityService() {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val ignoredPackages = setOf(
-        "com.attendancecopilot.attendance_copilot",
+        "com.dartnexuslab.omnipilot",
         "com.android.systemui",
         "com.google.android.inputmethod.latin",
         "com.samsung.android.honeyboard",

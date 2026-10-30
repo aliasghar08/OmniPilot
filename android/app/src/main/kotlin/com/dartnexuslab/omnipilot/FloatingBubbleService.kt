@@ -1,4 +1,4 @@
-package com.attendancecopilot.attendance_copilot
+package com.dartnexuslab.omnipilot
 
 import android.app.Notification
 import android.app.NotificationChannel

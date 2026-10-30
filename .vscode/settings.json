@@ -1,3 +1,4 @@
 {
-    "cmake.sourceDirectory": "/Users/aliasghar08/development/Attendance Copilot Repo/linux"
+  "cmake.sourceDirectory": "/Users/aliasghar08/development/Attendance Copilot Repo/linux",
+  "java.configuration.updateBuildConfiguration": "interactive"
 }
