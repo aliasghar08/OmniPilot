@@ -269,6 +269,34 @@ class AttendanceAccessibilityService : AccessibilityService() {
         )
     }
 
+    private fun isNodeEditableInThirdPartyApps(node: AccessibilityNodeInfo): Boolean {
+        if (node.isEditable) return true
+        val className = node.className?.toString() ?: ""
+        if (className.contains("EditText", ignoreCase = true) ||
+            className.contains("AutoComplete", ignoreCase = true) ||
+            className.contains("TextInput", ignoreCase = true) ||
+            className.contains("SearchView", ignoreCase = true) ||
+            className.contains("ComposeEditable", ignoreCase = true) ||
+            className.contains("SearchAutoComplete", ignoreCase = true)
+        ) {
+            return true
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT && node.inputType != 0) {
+            return true
+        }
+        val actions = node.actionList
+        if (actions.any { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT }) {
+            return true
+        }
+        if (node.isFocused && (node.isFocusable || node.isClickable) &&
+            (actions.any { it.id == AccessibilityNodeInfo.ACTION_PASTE } ||
+             actions.any { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT })
+        ) {
+            return true
+        }
+        return false
+    }
+
     private fun collectScreenSnapshot(
         node: AccessibilityNodeInfo,
         editableList: MutableList<Map<String, Any>>,
@@ -283,7 +311,7 @@ class AttendanceAccessibilityService : AccessibilityService() {
         val shortClass = className.substringAfterLast('.')
         val viewId = node.viewIdResourceName ?: ""
         val shortId = viewId.substringAfterLast('/')
-        val isEditable = node.isEditable || className.contains("EditText", ignoreCase = true)
+        val isEditable = isNodeEditableInThirdPartyApps(node)
 
         val showingHint = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             node.isShowingHintText
@@ -593,7 +621,17 @@ class AttendanceAccessibilityService : AccessibilityService() {
             val clip = ClipData.newPlainText("copilot_autofill", text)
             clipboard.setPrimaryClip(clip)
             node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-            node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            val pasted = node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            if (!pasted) {
+                // If PASTE action fails, try typing via ACTION_SET_TEXT once more after the click/focus
+                val args = Bundle().apply {
+                    putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                }
+                node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            } else {
+                true
+            }
         } catch (e: Exception) {
             false
         }
@@ -627,8 +665,7 @@ class AttendanceAccessibilityService : AccessibilityService() {
         node.getBoundsInScreen(bounds)
         val hasValidBounds = bounds.width() > 0 && bounds.height() > 0
 
-        val className = node.className?.toString() ?: ""
-        if (hasValidBounds && (node.isEditable || className.contains("EditText", ignoreCase = true))) {
+        if (hasValidBounds && isNodeEditableInThirdPartyApps(node)) {
             val fullId = node.viewIdResourceName ?: ""
             val shortId = fullId.substringAfterLast('/')
             val hint = node.hintText?.toString()?.trim() ?: ""
@@ -665,6 +702,16 @@ class AttendanceAccessibilityService : AccessibilityService() {
     ): EditableNodeEntry? {
         if (entries.isEmpty()) return null
         val trimmed = targetKey.trim()
+
+        // If user is currently focused on an editable field in any third-party app, prefer it
+        if (trimmed == "#0" || trimmed.isEmpty() || trimmed.equals("focused", ignoreCase = true) || trimmed.equals("current", ignoreCase = true)) {
+            entries.firstOrNull { it.node.isFocused && !usedIndices.contains(it.index) }?.let { return it }
+        }
+
+        // If there is only 1 editable entry on screen (typical for chat apps like WhatsApp, Telegram, search bars, notes), use it
+        if (entries.size == 1 && !usedIndices.contains(0)) {
+            return entries[0]
+        }
 
         // 1. Check index syntax: "#0", "#1", "0", "field_0", "index_0"
         val indexRegex = Regex("^(?:#|field_?|index_?)?(\\d+)$", RegexOption.IGNORE_CASE)

@@ -67,7 +67,11 @@ class AssistantController {
   /// deterministic on-device execution so commands always succeed.
   Future<String> handleUserMessage(String message, {bool fromOverlay = false}) async {
     if (_chatSession == null) {
-      return await _executeResilientLocalFallback(message, errorNote: 'Offline mode active');
+      return await _executeResilientLocalFallback(
+        message,
+        errorNote: 'Offline mode active',
+        fromOverlay: fromOverlay,
+      );
     }
 
     try {
@@ -94,7 +98,11 @@ class AssistantController {
 
       return response.text ?? 'Action completed.';
     } catch (e) {
-      return await _executeResilientLocalFallback(message, errorNote: e.toString());
+      return await _executeResilientLocalFallback(
+        message,
+        errorNote: e.toString(),
+        fromOverlay: fromOverlay,
+      );
     }
   }
 
@@ -455,8 +463,22 @@ class AssistantController {
   }
 
   /// Wide-purpose local & web-grounded executor when Gemini function-calling endpoint is unavailable.
-  Future<String> _executeResilientLocalFallback(String message, {String? errorNote}) async {
+  Future<String> _executeResilientLocalFallback(
+    String message, {
+    String? errorNote,
+    bool fromOverlay = false,
+  }) async {
     final lower = message.toLowerCase();
+
+    // 0. Direct text input/typing into whichever third-party app is currently open
+    if (lower.startsWith('type ') || lower.startsWith('input ') || lower.startsWith('enter ')) {
+      final text = message.split(' ').sublist(1).join(' ').trim().replaceAll('"', '').replaceAll("'", "");
+      final writeRes = await AccessibilityBridge.writeFieldsWithVerification(
+        {'#0': text},
+        switchToExternal: !fromOverlay,
+      );
+      return '✨ Typed "$text" into third-party app:\n$writeRes';
+    }
 
     // 1. Check / Inspect existing writes
     if (lower.contains('inspect') || lower.contains('check writes') || lower.contains('what is written')) {

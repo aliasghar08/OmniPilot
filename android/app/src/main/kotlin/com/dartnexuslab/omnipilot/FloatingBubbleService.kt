@@ -696,7 +696,40 @@ class FloatingBubbleService : Service() {
             return "✅ Executed field writes: $res"
         }
 
-        if (lower.startsWith("click ") || lower.startsWith("tap ")) {
+        // 1. Direct text typing into whatever third-party app is currently open
+        val writePrefixes = listOf("type ", "input ", "write ", "enter ", "fill ", "paste ")
+        for (pfx in writePrefixes) {
+            if (lower.startsWith(pfx)) {
+                val value = prompt.substring(pfx.length).trim().removeSurrounding("\"").removeSurrounding("'")
+                val writeRes = service.writeFieldsWithVerification(mapOf("#0" to value))
+                val sb = StringBuilder("✨ Typed into Active App:\n")
+                for ((k, v) in writeRes) {
+                    @Suppress("UNCHECKED_CAST")
+                    val info = v as? Map<String, Any> ?: continue
+                    val lbl = info["matchedLabel"] ?: k
+                    val written = info["verifiedValue"] ?: info["writtenValue"]
+                    val ok = info["verified"] == true || info["success"] == true
+                    sb.appendLine("${if (ok) "✅" else "❌"} [$lbl] = \"$written\"")
+                }
+                return sb.toString().trim()
+            }
+        }
+
+        // 2. Navigation commands in third party apps
+        if (lower.contains("scroll down")) {
+            val ok = service.scrollScreen("down")
+            return if (ok) "⬇️ Scrolled down." else "⚠️ Could not scroll."
+        }
+        if (lower.contains("scroll up")) {
+            val ok = service.scrollScreen("up")
+            return if (ok) "⬆️ Scrolled up." else "⚠️ Could not scroll."
+        }
+        if (lower.equals("back", ignoreCase = true) || lower.startsWith("go back")) {
+            service.performSystemNavigation("BACK")
+            return "◀ Navigated Back."
+        }
+
+        if (lower.startsWith("click ") || lower.startsWith("tap ") || lower.startsWith("press ")) {
             val target = prompt.substringAfter(" ").trim()
             val ok = service.clickElement(target)
             return if (ok) "✅ Clicked '$target'" else "⚠️ Could not find '$target'"
