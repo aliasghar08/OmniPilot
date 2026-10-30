@@ -55,7 +55,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyCriu9gyzQaQnGUGdpn9C6b2peGMXEN-0g',
-    appId: '1:1022577626394:android:6f11735f78f3653e6f70a3',
+    appId: '1:1022577626394:android:3f549ced74374d2b6f70a3',
     messagingSenderId: '1022577626394',
     projectId: 'attendance-autopilot',
     storageBucket: 'attendance-autopilot.firebasestorage.app',
