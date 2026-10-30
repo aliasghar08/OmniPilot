@@ -3,6 +3,7 @@ package com.dartnexuslab.omnipilot
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -720,18 +721,30 @@ class FloatingBubbleService : Service() {
     }
 
     private fun buildForegroundNotification(): Notification {
+        val notificationIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+        val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, flags)
+
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("OmniPilot Active")
-                .setContentText("Tap floating bubble to inspect, verify writes & control any app")
+                .setContentTitle("OmniPilot Assistant Active")
+                .setContentText("Tap to open OmniPilot • Tap floating bubble to inspect & control any app")
                 .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentIntent(pendingIntent)
                 .build()
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-                .setContentTitle("OmniPilot Active")
-                .setContentText("Tap floating bubble to inspect, verify writes & control any app")
+                .setContentTitle("OmniPilot Assistant Active")
+                .setContentText("Tap to open OmniPilot • Tap floating bubble to inspect & control any app")
                 .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentIntent(pendingIntent)
                 .build()
         }
     }

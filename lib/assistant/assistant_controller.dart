@@ -34,27 +34,32 @@ class AssistantController {
       return await handleUserMessage(prompt, fromOverlay: true);
     };
 
-    _model = FirebaseAI.agentPlatform().generativeModel(
-      model: 'gemini-2.0-flash',
-      tools: assistantTools,
-      systemInstruction: Content.system(
-        'You are OmniPilot, a wide-purpose Android Cross-App AI Assistant, Google Search Researcher, and Period Attendance Specialist.\n'
-        'Your capabilities include:\n'
-        '1. GOOGLE & LIVE WEB SEARCH: Use "searchGoogleAndWeb" to retrieve live information from Google, Google News, Wikipedia, and the web on any topic, or use "researchAndWriteToExternalApp" to research a topic on Google and automatically write the synthesized notes into the active Android app.\n'
-        '2. COMPLEX PERIOD ATTENDANCE FORM: Use "autofillScreenFields" to populate the multi-control Period Attendance & Compliance Form '
-        '(Dropdowns: periodType, department, section; Date Range: startDate, endDate; Period Counts: totalWorkingDays, daysPresent, approvedLeaveDays, unexcusedAbsentDays, lateArrivalsCount; '
-        'Radio Buttons: attendanceStanding, attendanceTrend; Checkboxes: medicalCertSubmitted, parentNotified, examEligible, makeupRequired; '
-        'Switch: verifiedByAdvisor; Slider: participationScore; Multiline: advisorRemarks).\n'
-        '3. INSPECTING ANY APP: Use "inspectExternalAppScreen" to see all editable fields, their current values, clickable buttons, dropdowns, radio buttons, and visible text.\n'
-        '4. CHECKING EXISTING WRITES: Use "checkExistingWrites" whenever asked to read, verify, or check what is currently written in form fields.\n'
-        '5. WRITING & FILLING EXTERNAL FORMS/NOTES: Use "fillExternalAppFields" or "writeNoteInExternalApp" to populate external apps and verify every write.\n'
-        '6. FULL UI CONTROL: Use "clickExternalAppElement", "toggleExternalCheckable", "scrollExternalAppScreen", "navigateAndroidSystem", and "openExternalAndroidApp".\n'
-        '7. FIRESTORE SYNC: Use "saveAttendanceRecord" to log period attendance records to Cloud Firestore.',
-      ),
-    );
+    try {
+      _model = FirebaseAI.agentPlatform().generativeModel(
+        model: 'gemini-2.0-flash',
+        tools: assistantTools,
+        systemInstruction: Content.system(
+          'You are OmniPilot, a wide-purpose Android Cross-App AI Assistant, Google Search Researcher, and Period Attendance Specialist.\n'
+          'Your capabilities include:\n'
+          '1. GOOGLE & LIVE WEB SEARCH: Use "searchGoogleAndWeb" to retrieve live information from Google, Google News, Wikipedia, and the web on any topic, or use "researchAndWriteToExternalApp" to research a topic on Google and automatically write the synthesized notes into the active Android app.\n'
+          '2. COMPLEX PERIOD ATTENDANCE FORM: Use "autofillScreenFields" to populate the multi-control Period Attendance & Compliance Form '
+          '(Dropdowns: periodType, department, section; Date Range: startDate, endDate; Period Counts: totalWorkingDays, daysPresent, approvedLeaveDays, unexcusedAbsentDays, lateArrivalsCount; '
+          'Radio Buttons: attendanceStanding, attendanceTrend; Checkboxes: medicalCertSubmitted, parentNotified, examEligible, makeupRequired; '
+          'Switch: verifiedByAdvisor; Slider: participationScore; Multiline: advisorRemarks).\n'
+          '3. INSPECTING ANY APP: Use "inspectExternalAppScreen" to see all editable fields, their current values, clickable buttons, dropdowns, radio buttons, and visible text.\n'
+          '4. CHECKING EXISTING WRITES: Use "checkExistingWrites" whenever asked to read, verify, or check what is currently written in form fields.\n'
+          '5. WRITING & FILLING EXTERNAL FORMS/NOTES: Use "fillExternalAppFields" or "writeNoteInExternalApp" to populate external apps and verify every write.\n'
+          '6. FULL UI CONTROL: Use "clickExternalAppElement", "toggleExternalCheckable", "scrollExternalAppScreen", "navigateAndroidSystem", and "openExternalAndroidApp".\n'
+          '7. FIRESTORE SYNC: Use "saveAttendanceRecord" to log period attendance records to Cloud Firestore.',
+        ),
+      );
 
-    _chatSession = _model.startChat();
-    _isInitialized = true;
+      _chatSession = _model.startChat();
+      _isInitialized = true;
+    } catch (_) {
+      // Offline fallback mode ready if Firebase AI / Vertex API is not yet linked
+      _isInitialized = true;
+    }
   }
 
   /// Sends a user message to the Gemini chat session and processes chained tool calls.
@@ -62,7 +67,7 @@ class AssistantController {
   /// deterministic on-device execution so commands always succeed.
   Future<String> handleUserMessage(String message, {bool fromOverlay = false}) async {
     if (_chatSession == null) {
-      throw StateError('AssistantController has not been initialized.');
+      return await _executeResilientLocalFallback(message, errorNote: 'Offline mode active');
     }
 
     try {

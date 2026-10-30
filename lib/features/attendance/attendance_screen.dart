@@ -391,6 +391,14 @@ class _AttendanceScreenState extends State<AttendanceScreen>
 
   Future<void> _toggleFloatingBubble() async {
     if (!_canDrawOverlays) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please grant "Display over other apps" permission to show the floating assistant.'),
+            backgroundColor: Colors.amber,
+          ),
+        );
+      }
       await AccessibilityBridge.requestOverlayPermission();
       return;
     }
@@ -546,8 +554,13 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                   CrossAppControllerCard(
                     activeExternalPackage: _activeExternalPackage,
                     isA11yEnabled: _isA11yEnabled,
+                    canDrawOverlays: _canDrawOverlays,
                     isBubbleRunning: _isBubbleRunning,
                     onToggleBubble: _toggleFloatingBubble,
+                    onRequestOverlay: () => AccessibilityBridge.requestOverlayPermission(),
+                    onOpenAppInfo: () => AccessibilityBridge.openAppInfoSettings(),
+                    onRequestIgnoreBattery: () =>
+                        AccessibilityBridge.requestIgnoreBatteryOptimizations(),
                     onInspectScreen: (switchToExt) =>
                         _inspectCurrentScreen(switchToExternal: switchToExt),
                   ),
@@ -583,8 +596,13 @@ class _AttendanceScreenState extends State<AttendanceScreen>
               CrossAppControllerCard(
                 activeExternalPackage: _activeExternalPackage,
                 isA11yEnabled: _isA11yEnabled,
+                canDrawOverlays: _canDrawOverlays,
                 isBubbleRunning: _isBubbleRunning,
                 onToggleBubble: _toggleFloatingBubble,
+                onRequestOverlay: () => AccessibilityBridge.requestOverlayPermission(),
+                onOpenAppInfo: () => AccessibilityBridge.openAppInfoSettings(),
+                onRequestIgnoreBattery: () =>
+                    AccessibilityBridge.requestIgnoreBatteryOptimizations(),
                 onInspectScreen: (switchToExt) =>
                     _inspectCurrentScreen(switchToExternal: switchToExt),
               ),

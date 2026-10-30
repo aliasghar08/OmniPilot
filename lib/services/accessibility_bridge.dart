@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 /// Communicates with native Android AccessibilityService and FloatingBubbleService
 /// for complete cross-app inspection, form filling, write verification, and UI automation.
 class AccessibilityBridge {
-  static const MethodChannel _channel = MethodChannel('com.attendancecopilot/accessibility');
+  static const MethodChannel _channel = MethodChannel('com.dartnexuslab.omnipilot/accessibility');
 
   /// Callback invoked when the user submits a prompt from the Floating Overlay over another app.
   static Future<String> Function(String prompt)? onOverlayPromptReceived;
@@ -58,6 +58,20 @@ class AccessibilityBridge {
   static Future<void> requestOverlayPermission() async {
     try {
       await _channel.invokeMethod('requestOverlayPermission');
+    } catch (_) {}
+  }
+
+  /// Opens the App Info details settings in Android (where restricted settings & OEM popups are managed).
+  static Future<void> openAppInfoSettings() async {
+    try {
+      await _channel.invokeMethod('openAppInfoSettings');
+    } catch (_) {}
+  }
+
+  /// Opens the battery optimization settings so the user can exempt OmniPilot from background killers (e.g. XOS Power Marathon).
+  static Future<void> requestIgnoreBatteryOptimizations() async {
+    try {
+      await _channel.invokeMethod('requestIgnoreBatteryOptimizations');
     } catch (_) {}
   }
 

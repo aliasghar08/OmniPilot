@@ -8,14 +8,17 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Path
 import android.graphics.Rect
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
+import android.widget.Toast
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -51,19 +54,50 @@ class AttendanceAccessibilityService : AccessibilityService() {
         instance = this
         Log.d(TAG, "AttendanceAccessibilityService Connected")
 
-        // Auto-launch floating overlay bubble if overlay permission is already granted
-        try {
-            if (android.provider.Settings.canDrawOverlays(this) && !FloatingBubbleService.isRunning) {
-                val intent = Intent(this, FloatingBubbleService::class.java)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(intent)
+        mainHandler.post {
+            try {
+                val hasOverlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    Settings.canDrawOverlays(this)
                 } else {
-                    startService(intent)
+                    true
                 }
-                Log.d(TAG, "Auto-started FloatingBubbleService on Accessibility connect")
+
+                if (!hasOverlay) {
+                    // Prompt user that overlay permission is needed for the floating assistant
+                    Toast.makeText(
+                        this,
+                        "OmniPilot: Please grant 'Display over other apps' to show the floating assistant.",
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    try {
+                        val overlayIntent = Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:$packageName")
+                        ).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        startActivity(overlayIntent)
+                    } catch (_: Exception) {
+                        try {
+                            val fallbackIntent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            startActivity(fallbackIntent)
+                        } catch (_: Exception) {}
+                    }
+                } else if (!FloatingBubbleService.isRunning) {
+                    val intent = Intent(this, FloatingBubbleService::class.java)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(intent)
+                    } else {
+                        startService(intent)
+                    }
+                    Log.d(TAG, "Auto-started FloatingBubbleService on Accessibility connect")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to auto-start floating bubble: ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to auto-start floating bubble: ${e.message}")
         }
     }
 
@@ -71,6 +105,25 @@ class AttendanceAccessibilityService : AccessibilityService() {
         val pkg = event?.packageName?.toString() ?: return
         if (pkg.isNotEmpty() && !ignoredPackages.contains(pkg)) {
             lastExternalPackage = pkg
+
+            // If user opens an external app and overlay permission is granted, ensure assistant bubble is visible
+            if (!FloatingBubbleService.isRunning) {
+                try {
+                    val hasOverlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        Settings.canDrawOverlays(this)
+                    } else {
+                        true
+                    }
+                    if (hasOverlay) {
+                        val intent = Intent(this, FloatingBubbleService::class.java)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            startForegroundService(intent)
+                        } else {
+                            startService(intent)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
         }
     }
 

@@ -12,9 +12,29 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
 
-    private val CHANNEL = "com.attendancecopilot/accessibility"
+    private val CHANNEL = "com.dartnexuslab.omnipilot/accessibility"
     private var methodChannel: MethodChannel? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    override fun onResume() {
+        super.onResume()
+        // When user returns to OmniPilot after granting permissions, auto-launch the assistant overlay if authorized
+        try {
+            val canOverlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                Settings.canDrawOverlays(this)
+            } else {
+                true
+            }
+            if (AttendanceAccessibilityService.isRunning && canOverlay && !FloatingBubbleService.isRunning) {
+                val intent = Intent(this, FloatingBubbleService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent)
+                } else {
+                    startService(intent)
+                }
+            }
+        } catch (_: Exception) {}
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -63,11 +83,46 @@ class MainActivity : FlutterActivity() {
                                 }
                                 startActivity(intent)
                                 result.success(true)
-                            } catch (e: Exception) {
-                                result.error("ERROR", e.localizedMessage, null)
+                            } catch (_: Exception) {
+                                try {
+                                    val genericIntent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                    }
+                                    startActivity(genericIntent)
+                                    result.success(true)
+                                } catch (e2: Exception) {
+                                    result.error("ERROR", e2.localizedMessage, null)
+                                }
                             }
                         } else {
                             result.success(true)
+                        }
+                    }
+
+                    "openAppInfoSettings" -> {
+                        try {
+                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = Uri.parse("package:$packageName")
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            startActivity(intent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("ERROR", e.localizedMessage, null)
+                        }
+                    }
+
+                    "requestIgnoreBatteryOptimizations" -> {
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                startActivity(intent)
+                            }
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("ERROR", e.localizedMessage, null)
                         }
                     }
 
