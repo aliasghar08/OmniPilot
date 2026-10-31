@@ -27,13 +27,27 @@ class AccessibilityBridge {
     });
   }
 
-  /// Checks if the Accessibility Service is active in Android Settings.
+  /// Checks if the Accessibility Service is active, running and bound to Android OS.
   static Future<bool> isAccessibilityEnabled() async {
     try {
       final bool? enabled = await _channel.invokeMethod<bool>('isAccessibilityEnabled');
       return enabled ?? false;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// Returns detailed accessibility status: whether service is actively bound and running,
+  /// and whether the toggle is switched ON in Android Settings.
+  static Future<Map<String, bool>> getAccessibilityStatus() async {
+    try {
+      final res = await _channel.invokeMapMethod<String, dynamic>('getAccessibilityStatus');
+      return {
+        'isBound': (res?['isBound'] as bool?) ?? false,
+        'isSettingEnabled': (res?['isSettingEnabled'] as bool?) ?? false,
+      };
+    } catch (_) {
+      return {'isBound': false, 'isSettingEnabled': false};
     }
   }
 

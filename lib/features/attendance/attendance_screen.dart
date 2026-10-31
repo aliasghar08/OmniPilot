@@ -59,6 +59,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
 
   // Background / Accessibility / Floating Bubble Status
   bool _isA11yEnabled = false;
+  bool _isA11ySettingOn = false;
   bool _canDrawOverlays = false;
   bool _isBubbleRunning = false;
   String _activeExternalPackage = '';
@@ -262,12 +263,13 @@ class _AttendanceScreenState extends State<AttendanceScreen>
   }
 
   Future<void> _checkPermissions() async {
-    final a11y = await AccessibilityBridge.isAccessibilityEnabled();
+    final a11yStatus = await AccessibilityBridge.getAccessibilityStatus();
     final overlays = await AccessibilityBridge.canDrawOverlays();
     final bubble = await AccessibilityBridge.isFloatingBubbleRunning();
     if (mounted) {
       setState(() {
-        _isA11yEnabled = a11y;
+        _isA11yEnabled = a11yStatus['isBound'] ?? false;
+        _isA11ySettingOn = a11yStatus['isSettingEnabled'] ?? false;
         _canDrawOverlays = overlays;
         _isBubbleRunning = bubble;
       });
@@ -554,6 +556,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                   CrossAppControllerCard(
                     activeExternalPackage: _activeExternalPackage,
                     isA11yEnabled: _isA11yEnabled,
+                    isA11ySettingOn: _isA11ySettingOn,
                     canDrawOverlays: _canDrawOverlays,
                     isBubbleRunning: _isBubbleRunning,
                     onToggleBubble: _toggleFloatingBubble,
@@ -596,6 +599,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
               CrossAppControllerCard(
                 activeExternalPackage: _activeExternalPackage,
                 isA11yEnabled: _isA11yEnabled,
+                isA11ySettingOn: _isA11ySettingOn,
                 canDrawOverlays: _canDrawOverlays,
                 isBubbleRunning: _isBubbleRunning,
                 onToggleBubble: _toggleFloatingBubble,

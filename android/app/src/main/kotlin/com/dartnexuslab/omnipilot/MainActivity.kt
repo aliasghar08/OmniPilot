@@ -43,13 +43,23 @@ class MainActivity : FlutterActivity() {
             setMethodCallHandler { call, result ->
                 when (call.method) {
                     "isAccessibilityEnabled" -> {
+                        // Return true only if service is actively running and bound to system
+                        result.success(AttendanceAccessibilityService.isRunning)
+                    }
+
+                    "getAccessibilityStatus" -> {
                         val isRunning = AttendanceAccessibilityService.isRunning
                         val enabledServices = Settings.Secure.getString(
                             contentResolver,
                             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
                         ) ?: ""
                         val isSettingEnabled = enabledServices.contains(packageName)
-                        result.success(isRunning || isSettingEnabled)
+                        result.success(
+                            mapOf(
+                                "isBound" to isRunning,
+                                "isSettingEnabled" to isSettingEnabled
+                            )
+                        )
                     }
 
                     "openAccessibilitySettings" -> {

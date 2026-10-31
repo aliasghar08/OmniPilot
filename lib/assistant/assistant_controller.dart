@@ -115,12 +115,12 @@ class AssistantController {
 
     switch (call.name) {
       case 'inspectExternalAppScreen':
-        final isA11y = await AccessibilityBridge.isAccessibilityEnabled();
-        if (!isA11y) {
-          return {
-            'status': 'error',
-            'message': 'Accessibility Service is disabled. Enable it in Settings > Accessibility > OmniPilot.',
-          };
+        final a11yStatus = await AccessibilityBridge.getAccessibilityStatus();
+        if (!(a11yStatus['isBound'] ?? false)) {
+          final msg = (a11yStatus['isSettingEnabled'] ?? false)
+              ? 'Accessibility permission is ON in Settings, but the system (Infinix/XOS) suspended the background service. Please toggle OmniPilot OFF and ON in Accessibility Settings.'
+              : 'Accessibility Service is disabled. Enable it in Settings > Accessibility > OmniPilot.';
+          return {'status': 'error', 'message': msg};
         }
         final switchToExternal = (args['switchToExternal'] as bool?) ?? !fromOverlay;
         final snapshot = await AccessibilityBridge.getScreenSnapshot(
@@ -134,9 +134,12 @@ class AssistantController {
         };
 
       case 'checkExistingWrites':
-        final isA11y = await AccessibilityBridge.isAccessibilityEnabled();
-        if (!isA11y) {
-          return {'status': 'error', 'message': 'Accessibility Service is disabled.'};
+        final a11yStatus = await AccessibilityBridge.getAccessibilityStatus();
+        if (!(a11yStatus['isBound'] ?? false)) {
+          final msg = (a11yStatus['isSettingEnabled'] ?? false)
+              ? 'Accessibility permission is ON, but the system (Infinix/XOS) suspended the background service. Please toggle OmniPilot OFF and ON in Accessibility Settings.'
+              : 'Accessibility Service is disabled.';
+          return {'status': 'error', 'message': msg};
         }
         final rawNames = args['fieldNames']?.toString() ?? '';
         final targets = rawNames.isNotEmpty
@@ -154,12 +157,12 @@ class AssistantController {
         };
 
       case 'fillExternalAppFields':
-        final isA11y = await AccessibilityBridge.isAccessibilityEnabled();
-        if (!isA11y) {
-          return {
-            'status': 'error',
-            'message': 'Accessibility Service is disabled. Enable it in Settings > Accessibility.',
-          };
+        final a11yStatus = await AccessibilityBridge.getAccessibilityStatus();
+        if (!(a11yStatus['isBound'] ?? false)) {
+          final msg = (a11yStatus['isSettingEnabled'] ?? false)
+              ? 'Accessibility permission is ON in Settings, but the system (Infinix/XOS) suspended the background service. Please toggle OmniPilot OFF and ON in Accessibility Settings.'
+              : 'Accessibility Service is disabled. Enable it in Settings > Accessibility.';
+          return {'status': 'error', 'message': msg};
         }
 
         final fieldMap = <String, String>{};

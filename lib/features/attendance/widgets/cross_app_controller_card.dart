@@ -7,6 +7,7 @@ import 'permission_status_tile.dart';
 class CrossAppControllerCard extends StatelessWidget {
   final String activeExternalPackage;
   final bool isA11yEnabled;
+  final bool isA11ySettingOn;
   final bool canDrawOverlays;
   final bool isBubbleRunning;
   final VoidCallback onToggleBubble;
@@ -19,6 +20,7 @@ class CrossAppControllerCard extends StatelessWidget {
     super.key,
     required this.activeExternalPackage,
     required this.isA11yEnabled,
+    this.isA11ySettingOn = false,
     required this.canDrawOverlays,
     required this.isBubbleRunning,
     required this.onToggleBubble,
@@ -64,18 +66,52 @@ class CrossAppControllerCard extends StatelessWidget {
             const Divider(height: 28),
 
             // 1. Accessibility Service Tile
+            if (!isA11yEnabled && isA11ySettingOn) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.amber.shade400),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: Colors.amber.shade900, size: 24),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Accessibility is enabled in Settings, but Infinix/XOS battery manager suspended the service process. Tap "Re-toggle" to turn it OFF and ON, and set Battery to Unrestricted.',
+                        style: TextStyle(fontSize: 12, color: Colors.amber.shade900),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             PermissionStatusTile(
-              icon: isA11yEnabled ? Icons.check_circle : Icons.error_outline,
-              iconColor: isA11yEnabled ? Colors.green : Colors.orange,
-              title: 'Android Accessibility Service',
+              icon: isA11yEnabled
+                  ? Icons.check_circle
+                  : (isA11ySettingOn ? Icons.warning_amber_rounded : Icons.error_outline),
+              iconColor: isA11yEnabled
+                  ? Colors.green
+                  : (isA11ySettingOn ? Colors.amber.shade800 : Colors.orange),
+              title: isA11yEnabled
+                  ? 'Android Accessibility Service'
+                  : (isA11ySettingOn ? 'Accessibility Suspended by System' : 'Android Accessibility Service'),
               subtitle: isA11yEnabled
                   ? 'Active • Full read, write, verify & click control enabled'
-                  : 'Disabled • Enable in Settings to control external apps',
+                  : (isA11ySettingOn
+                      ? 'Infinix put service to sleep. Tap Re-toggle to reactivate.'
+                      : 'Disabled • Enable in Settings to control external apps'),
               trailing: FilledButton.tonal(
+                style: (!isA11yEnabled && isA11ySettingOn)
+                    ? FilledButton.styleFrom(backgroundColor: Colors.amber.shade100, foregroundColor: Colors.amber.shade900)
+                    : null,
                 onPressed: () async {
                   await AccessibilityBridge.openAccessibilitySettings();
                 },
-                child: Text(isA11yEnabled ? 'Settings' : 'Enable'),
+                child: Text(isA11yEnabled ? 'Settings' : (isA11ySettingOn ? 'Re-toggle' : 'Enable')),
               ),
             ),
             const Divider(height: 16),
