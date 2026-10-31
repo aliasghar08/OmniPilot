@@ -1,11 +1,13 @@
 package com.dartnexuslab.omnipilot
 
+import android.accessibilityservice.AccessibilityButtonController
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Path
 import android.graphics.Rect
 import android.net.Uri
@@ -13,6 +15,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.ContactsContract
 import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
@@ -40,6 +43,7 @@ class AttendanceAccessibilityService : AccessibilityService() {
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var buttonCallback: Any? = null
 
     private val ignoredPackages = setOf(
         "com.dartnexuslab.omnipilot",
@@ -69,14 +73,44 @@ class AttendanceAccessibilityService : AccessibilityService() {
             val info = serviceInfo ?: android.accessibilityservice.AccessibilityServiceInfo()
             info.eventTypes = AccessibilityEvent.TYPES_ALL_MASK
             info.feedbackType = android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_GENERIC
-            info.flags = android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+            var flags = android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
                          android.accessibilityservice.AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
                          android.accessibilityservice.AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
                          android.accessibilityservice.AccessibilityServiceInfo.FLAG_REQUEST_ENHANCED_WEB_ACCESSIBILITY
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_REQUEST_ACCESSIBILITY_BUTTON
+            }
+            info.flags = flags
             info.notificationTimeout = 50L
             this.serviceInfo = info
         } catch (e: Exception) {
             Log.w(TAG, "Failed to apply programmatic serviceInfo: ${e.message}")
+        }
+
+        // Register hardware / navigation accessibility button & shortcut callback
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                val cb = object : AccessibilityButtonController.AccessibilityButtonCallback() {
+                    override fun onClicked(controller: AccessibilityButtonController) {
+                        super.onClicked(controller)
+                        Log.d(TAG, "Accessibility button / shortcut triggered")
+                        handleAccessibilityShortcutTriggered()
+                    }
+
+                    override fun onAvailabilityChanged(
+                        controller: AccessibilityButtonController,
+                        available: Boolean
+                    ) {
+                        super.onAvailabilityChanged(controller, available)
+                        Log.d(TAG, "Accessibility button availability changed: $available")
+                    }
+                }
+                accessibilityButtonController.registerAccessibilityButtonCallback(cb)
+                buttonCallback = cb
+                Log.d(TAG, "Registered AccessibilityButtonCallback successfully")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to register AccessibilityButtonCallback: ${e.message}")
+            }
         }
 
         // If overlay permission is already granted, launch the floating assistant bubble
@@ -102,6 +136,45 @@ class AttendanceAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Responds immediately when the user taps the Android system accessibility button
+     * or triggers the Accessibility Shortcut.
+     */
+    fun handleAccessibilityShortcutTriggered() {
+        mainHandler.post {
+            try {
+                val hasOverlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    Settings.canDrawOverlays(this)
+                } else {
+                    true
+                }
+
+                if (hasOverlay) {
+                    val bubbleInstance = FloatingBubbleService.currentInstance
+                    if (FloatingBubbleService.isRunning && bubbleInstance != null) {
+                        bubbleInstance.toggleCommandPanel()
+                    } else {
+                        val intent = Intent(this, FloatingBubbleService::class.java).apply {
+                            action = FloatingBubbleService.ACTION_SHOW_PANEL
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            startForegroundService(intent)
+                        } else {
+                            startService(intent)
+                        }
+                    }
+                } else {
+                    val intent = Intent(this, MainActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    }
+                    startActivity(intent)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling accessibility shortcut trigger: ${e.message}", e)
+            }
+        }
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val pkg = event?.packageName?.toString() ?: return
         if (pkg.isNotEmpty() && !ignoredPackages.contains(pkg)) {
@@ -115,6 +188,15 @@ class AttendanceAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && buttonCallback != null) {
+            try {
+                val cb = buttonCallback as? AccessibilityButtonController.AccessibilityButtonCallback
+                if (cb != null) {
+                    accessibilityButtonController.unregisterAccessibilityButtonCallback(cb)
+                }
+            } catch (_: Exception) {}
+            buttonCallback = null
+        }
         if (instance == this) {
             instance = null
         }
@@ -1171,17 +1253,143 @@ class AttendanceAccessibilityService : AccessibilityService() {
         return apps.sortedBy { it["appName"] ?: "" }
     }
 
+    private fun isIntentResolvable(intent: Intent): Boolean {
+        val resolveInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.resolveActivity(intent, PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong()))
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        }
+        return resolveInfo != null && resolveInfo.activityInfo != null && resolveInfo.activityInfo.packageName != "android"
+    }
+
+    /**
+     * Resolves and launches the system default app for standard Android intents (Contacts, Browser, Phone, SMS, Calendar, Notes).
+     * This guarantees OEM compatibility (Samsung, Infinix, Xiaomi, Oppo, Vivo, Pixel) by honoring user's default app settings.
+     */
+    fun launchDefaultApp(keyword: String): Boolean {
+        val lower = keyword.lowercase().trim()
+        val pm = packageManager
+        var intent: Intent? = null
+
+        when {
+            lower == "contacts" || lower == "contact" || lower == "people" || lower == "phonebook" -> {
+                val base = Intent(Intent.ACTION_VIEW, ContactsContract.Contacts.CONTENT_URI).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                if (isIntentResolvable(base)) {
+                    intent = base
+                } else {
+                    try {
+                        val catIntent = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_CONTACTS).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        if (isIntentResolvable(catIntent)) intent = catIntent
+                    } catch (_: Exception) {}
+                }
+            }
+            lower == "browser" || lower == "chrome" || lower == "web" || lower == "internet" -> {
+                try {
+                    val browserIntent = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_BROWSER).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    if (isIntentResolvable(browserIntent)) {
+                        intent = browserIntent
+                    }
+                } catch (_: Exception) {}
+                if (intent == null) {
+                    val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    if (isIntentResolvable(webIntent)) intent = webIntent
+                }
+            }
+            lower == "phone" || lower == "dialer" || lower == "call" -> {
+                val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                if (isIntentResolvable(dialIntent)) intent = dialIntent
+            }
+            lower == "sms" || lower == "messages" || lower == "message" || lower == "messaging" -> {
+                try {
+                    val msgIntent = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_MESSAGING).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    if (isIntentResolvable(msgIntent)) intent = msgIntent
+                } catch (_: Exception) {}
+            }
+            lower == "calendar" -> {
+                try {
+                    val calIntent = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_CALENDAR).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    if (isIntentResolvable(calIntent)) intent = calIntent
+                } catch (_: Exception) {}
+            }
+            lower == "email" || lower == "mail" -> {
+                try {
+                    val mailIntent = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_EMAIL).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    if (isIntentResolvable(mailIntent)) intent = mailIntent
+                } catch (_: Exception) {}
+            }
+            lower == "gallery" || lower == "photos" -> {
+                try {
+                    val galIntent = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_GALLERY).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    if (isIntentResolvable(galIntent)) intent = galIntent
+                } catch (_: Exception) {}
+            }
+            lower == "files" || lower == "file manager" || lower == "my files" -> {
+                try {
+                    val filesIntent = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_FILES).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    if (isIntentResolvable(filesIntent)) intent = filesIntent
+                } catch (_: Exception) {}
+            }
+        }
+
+        if (intent != null) {
+            try {
+                startActivity(intent)
+                val resolveInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    pm.resolveActivity(intent, PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong()))
+                } else {
+                    @Suppress("DEPRECATION")
+                    pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+                }
+                val pkg = resolveInfo?.activityInfo?.packageName
+                if (!pkg.isNullOrEmpty() && pkg != "android") {
+                    lastExternalPackage = pkg
+                    Log.d(TAG, "Launched default system app for '$keyword': $pkg")
+                }
+                return true
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed launching default app intent for '$keyword': ${e.message}")
+            }
+        }
+        return false
+    }
+
     /**
      * Launches an installed external Android app by its human name (e.g. "Contacts", "Chrome")
-     * or package name (e.g. "com.google.android.contacts").
+     * or package name (e.g. "com.google.android.contacts"). Prioritizes the user's default app.
      */
     fun launchAppByPackageOrName(nameOrPackage: String): Boolean {
         val query = nameOrPackage.trim()
         if (query.isEmpty()) return false
 
+        // 1. Check if the query refers to a system default app category first
+        if (launchDefaultApp(query)) {
+            return true
+        }
+
         val pm = packageManager
 
-        // 1. Direct package launch
+        // 2. Direct package launch
         val directIntent = pm.getLaunchIntentForPackage(query)
         if (directIntent != null) {
             directIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

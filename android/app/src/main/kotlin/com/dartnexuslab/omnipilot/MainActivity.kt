@@ -363,13 +363,36 @@ class MainActivity : FlutterActivity() {
                                 mainHandler.post { result.success(launched) }
                             }.start()
                         } else {
-                            val launchIntent = packageManager.getLaunchIntentForPackage(appNameOrPackage)
-                            if (launchIntent != null) {
-                                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                startActivity(launchIntent)
+                            val lower = appNameOrPackage.lowercase().trim()
+                            var defaultLaunched = false
+                            if (lower == "contacts" || lower == "contact" || lower == "people") {
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, android.provider.ContactsContract.Contacts.CONTENT_URI).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    startActivity(intent)
+                                    defaultLaunched = true
+                                } catch (_: Exception) {}
+                            } else if (lower == "browser" || lower == "chrome" || lower == "web") {
+                                try {
+                                    val intent = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_BROWSER).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    startActivity(intent)
+                                    defaultLaunched = true
+                                } catch (_: Exception) {}
+                            }
+                            if (defaultLaunched) {
                                 result.success(true)
                             } else {
-                                result.success(false)
+                                val launchIntent = packageManager.getLaunchIntentForPackage(appNameOrPackage)
+                                if (launchIntent != null) {
+                                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    startActivity(launchIntent)
+                                    result.success(true)
+                                } else {
+                                    result.success(false)
+                                }
                             }
                         }
                     }

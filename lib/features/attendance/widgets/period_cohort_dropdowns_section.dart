@@ -49,64 +49,77 @@ class PeriodCohortDropdownsSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              flex: 6,
-              child: InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: 'Department / Program',
-                  prefixIcon: Icon(Icons.school_outlined),
-                  border: OutlineInputBorder(),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isNarrow = constraints.maxWidth < 460;
+            final deptWidget = InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Department / Program',
+                prefixIcon: Icon(Icons.school_outlined),
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: selectedDepartment,
                   isDense: true,
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: selectedDepartment,
-                    isDense: true,
-                    isExpanded: true,
-                    items: AppConstants.departmentOptions
-                        .map((d) => DropdownMenuItem(
-                              value: d,
-                              child: Text(d, overflow: TextOverflow.ellipsis),
-                            ))
-                        .toList(),
-                    onChanged: (val) {
-                      if (val != null) onDepartmentChanged(val);
-                    },
-                  ),
+                  isExpanded: true,
+                  items: AppConstants.departmentOptions
+                      .map((d) => DropdownMenuItem(
+                            value: d,
+                            child: Text(d, overflow: TextOverflow.ellipsis),
+                          ))
+                      .toList(),
+                  onChanged: (val) {
+                    if (val != null) onDepartmentChanged(val);
+                  },
                 ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              flex: 5,
-              child: InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: 'Section / Cohort',
-                  prefixIcon: Icon(Icons.groups_outlined),
-                  border: OutlineInputBorder(),
+            );
+
+            final sectionWidget = InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Section / Cohort',
+                prefixIcon: Icon(Icons.groups_outlined),
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: selectedSection,
                   isDense: true,
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: selectedSection,
-                    isDense: true,
-                    isExpanded: true,
-                    items: AppConstants.sectionOptions
-                        .map((s) => DropdownMenuItem(
-                              value: s,
-                              child: Text(s, overflow: TextOverflow.ellipsis),
-                            ))
-                        .toList(),
-                    onChanged: (val) {
-                      if (val != null) onSectionChanged(val);
-                    },
-                  ),
+                  isExpanded: true,
+                  items: AppConstants.sectionOptions
+                      .map((s) => DropdownMenuItem(
+                            value: s,
+                            child: Text(s, overflow: TextOverflow.ellipsis),
+                          ))
+                      .toList(),
+                  onChanged: (val) {
+                    if (val != null) onSectionChanged(val);
+                  },
                 ),
               ),
-            ),
-          ],
+            );
+
+            if (isNarrow) {
+              return Column(
+                children: [
+                  deptWidget,
+                  const SizedBox(height: 10),
+                  sectionWidget,
+                ],
+              );
+            }
+
+            return Row(
+              children: [
+                Expanded(flex: 6, child: deptWidget),
+                const SizedBox(width: 10),
+                Expanded(flex: 5, child: sectionWidget),
+              ],
+            );
+          },
         ),
       ],
     );

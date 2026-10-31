@@ -20,4 +20,5 @@ export 'prompt_suggestions_bar.dart';
 export 'saved_period_records_card.dart';
 export 'student_identity_counts_section.dart';
 export 'in_app_customization_card.dart';
+export 'developer_info_tab.dart';
 

@@ -48,12 +48,7 @@ class OmniPilotApp extends StatelessWidget {
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.system,
       builder: (context, child) {
-        return Stack(
-          children: [
-            ?child,
-            const FloatingCopyrightWatermark(),
-          ],
-        );
+        return child ?? const SizedBox.shrink();
       },
       home: const AttendanceScreen(),
     );

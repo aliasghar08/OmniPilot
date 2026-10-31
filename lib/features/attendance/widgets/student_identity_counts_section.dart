@@ -29,34 +29,46 @@ class StudentIdentityCountsSection extends StatelessWidget {
           title: '3. Student Identity & Period Attendance Breakdown',
         ),
         const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              flex: 6,
-              child: TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Student Full Name',
-                  prefixIcon: Icon(Icons.person_outline),
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isNarrow = constraints.maxWidth < 440;
+            final nameWidget = TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Student Full Name',
+                prefixIcon: Icon(Icons.person_outline),
+                border: OutlineInputBorder(),
+                isDense: true,
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              flex: 5,
-              child: TextField(
-                controller: rollController,
-                decoration: const InputDecoration(
-                  labelText: 'Roll / Registration No.',
-                  prefixIcon: Icon(Icons.badge_outlined),
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
+            );
+            final rollWidget = TextField(
+              controller: rollController,
+              decoration: const InputDecoration(
+                labelText: 'Roll / Registration No.',
+                prefixIcon: Icon(Icons.badge_outlined),
+                border: OutlineInputBorder(),
+                isDense: true,
               ),
-            ),
-          ],
+            );
+
+            if (isNarrow) {
+              return Column(
+                children: [
+                  nameWidget,
+                  const SizedBox(height: 10),
+                  rollWidget,
+                ],
+              );
+            }
+
+            return Row(
+              children: [
+                Expanded(flex: 6, child: nameWidget),
+                const SizedBox(width: 10),
+                Expanded(flex: 5, child: rollWidget),
+              ],
+            );
+          },
         ),
         const SizedBox(height: 12),
         Row(

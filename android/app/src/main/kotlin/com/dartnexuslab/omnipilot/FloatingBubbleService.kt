@@ -49,9 +49,15 @@ class FloatingBubbleService : Service() {
     companion object {
         private const val CHANNEL_ID = "floating_bubble_channel"
         private const val NOTIFICATION_ID = 2001
+        const val ACTION_SHOW_PANEL = "com.dartnexuslab.omnipilot.SHOW_PANEL"
+        const val ACTION_TOGGLE = "com.dartnexuslab.omnipilot.TOGGLE"
 
         @Volatile
         var isRunning = false
+            private set
+
+        @Volatile
+        var currentInstance: FloatingBubbleService? = null
             private set
 
         /**
@@ -65,6 +71,7 @@ class FloatingBubbleService : Service() {
     override fun onCreate() {
         super.onCreate()
         isRunning = true
+        currentInstance = this
         createNotificationChannel()
 
         val notification = buildForegroundNotification()
@@ -82,6 +89,26 @@ class FloatingBubbleService : Service() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         setupFloatingBubble()
         setupFloatingCommandPanel()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_SHOW_PANEL -> {
+                mainHandler.post { expandCommandPanel() }
+            }
+            ACTION_TOGGLE -> {
+                mainHandler.post { toggleCommandPanel() }
+            }
+        }
+        return START_STICKY
+    }
+
+    fun toggleCommandPanel() {
+        if (floatingPanelView?.visibility == View.VISIBLE) {
+            collapseCommandPanel()
+        } else {
+            expandCommandPanel()
+        }
     }
 
     private fun overlayLayoutType(): Int {
@@ -699,6 +726,71 @@ class FloatingBubbleService : Service() {
             return "✅ Executed field writes: $res"
         }
 
+        // 0. App Launch commands in human language (e.g. "open contacts", "launch browser", "start chrome")
+        val openPrefixes = listOf("open ", "launch ", "start ", "go to ")
+        for (pfx in openPrefixes) {
+            if (lower.startsWith(pfx)) {
+                val appTarget = prompt.substring(pfx.length).trim()
+                val ok = service.launchAppByPackageOrName(appTarget)
+                return if (ok) "🚀 Launched $appTarget" else "⚠️ Could not open $appTarget"
+            }
+        }
+
+        // 1. Natural language field extraction (Name, Phone, Email, B-Form/CNIC, etc.)
+        val humanFields = mutableMapOf<String, String>()
+
+        // Phone number matching (Pakistani or international/standard format)
+        val phoneMatch = Regex("""(?:\+?92|0)?3[0-9]{2}[-\s]?[0-9]{7}|(?:\+?1|0)?[0-9]{10,11}""").find(prompt)
+        if (phoneMatch != null) {
+            humanFields["phone"] = phoneMatch.value.trim()
+        }
+
+        // Email address matching
+        val emailMatch = Regex("""[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}""").find(prompt)
+        if (emailMatch != null) {
+            humanFields["email"] = emailMatch.value.trim()
+        }
+
+        // CNIC / B-Form matching
+        val cnicMatch = Regex("""[0-9]{5}-?[0-9]{7}-?[0-9]""").find(prompt)
+        if (cnicMatch != null) {
+            humanFields["bForm"] = cnicMatch.value.trim()
+            humanFields["cnic"] = cnicMatch.value.trim()
+        }
+
+        // Name extraction from natural phrases ("for Ali Asghar", "name is Ali", "name Ali", "student Ali Asghar")
+        val nameMatch = Regex("""(?:name\s*(?:is|:)?|for|student\s*(?:is|:)?)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)""").find(prompt)
+            ?: Regex("""(?:put|enter|write)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s+(?:as|in|for)\s+(?:name|contact)""").find(prompt)
+        if (nameMatch != null) {
+            val fullName = nameMatch.groupValues[1].trim()
+            if (fullName.contains(" ")) {
+                humanFields["firstName"] = fullName.substringBefore(" ")
+                humanFields["lastName"] = fullName.substringAfter(" ")
+            } else {
+                humanFields["firstName"] = fullName
+                humanFields["studentName"] = fullName
+            }
+        }
+
+        if (humanFields.isNotEmpty()) {
+            val res = service.writeFieldsWithVerification(humanFields)
+            val sb = StringBuilder("✨ Human Language Auto-Fill:\n")
+            for ((k, v) in res) {
+                @Suppress("UNCHECKED_CAST")
+                val info = v as? Map<String, Any> ?: continue
+                val lbl = info["matchedLabel"] ?: k
+                val written = info["verifiedValue"] ?: info["writtenValue"]
+                val ok = info["verified"] == true || info["success"] == true
+                sb.appendLine("${if (ok) "✅" else "❌"} [$lbl] = \"$written\"")
+            }
+            if (lower.contains("save") || lower.contains("done") || lower.contains("submit")) {
+                mainHandler.postDelayed({
+                    service.clickElement("Save") || service.clickElement("Done") || service.clickElement("Submit")
+                }, 400L)
+            }
+            return sb.toString().trim()
+        }
+
         // 1. Direct text typing into whatever third-party app is currently open
         val writePrefixes = listOf("type ", "input ", "write ", "enter ", "fill ", "paste ")
         for (pfx in writePrefixes) {
@@ -788,6 +880,9 @@ class FloatingBubbleService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
+        if (currentInstance == this) {
+            currentInstance = null
+        }
         floatingBubbleView?.let {
             try {
                 windowManager?.removeView(it)

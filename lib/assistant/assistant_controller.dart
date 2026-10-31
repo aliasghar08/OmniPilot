@@ -40,6 +40,10 @@ class AssistantController {
         tools: assistantTools,
         systemInstruction: Content.system(
           'You are OmniPilot, a wide-purpose Android Cross-App AI Assistant, Google Search Researcher, and Period Attendance Specialist.\n'
+          'HUMAN LANGUAGE UNDERSTANDING:\n'
+          'You understand conversational, colloquial human language in English, Urdu, Hindi, and mixed phrasing without requiring rigid syntax or command keywords. '
+          'Infer user intent naturally. Whether the user says "put Ali Asghar in contact with phone 03001234567", "fill BISP Taleemi Wazaif for student Aisha", "scroll down", or "what is written on the screen", '
+          'immediately call the appropriate tool.\n'
           'Your capabilities include:\n'
           '1. GOOGLE & LIVE WEB SEARCH: Use "searchGoogleAndWeb" to retrieve live information from Google, Google News, Wikipedia, and the web on any topic, or use "researchAndWriteToExternalApp" to research a topic on Google and automatically write the synthesized notes into the active Android app.\n'
           '2. COMPLEX PERIOD ATTENDANCE FORM: Use "autofillScreenFields" to populate the multi-control Period Attendance & Compliance Form '
@@ -488,6 +492,70 @@ class AssistantController {
         switchToExternal: !fromOverlay,
       );
       return '✨ Typed "$text" into third-party app:\n$writeRes';
+    }
+
+    // 0b. Human Language Third-Party Form & Contact Filling (Contacts, BISP, Notes, ERP)
+    final isFieldInput = lower.contains('phone') ||
+        lower.contains('email') ||
+        lower.contains('contact') ||
+        lower.contains('bform') ||
+        lower.contains('b-form') ||
+        lower.contains('cnic') ||
+        lower.contains('put ') ||
+        lower.contains('fill contact') ||
+        lower.contains('save contact') ||
+        lower.contains('add contact');
+
+    if (isFieldInput && !lower.contains('google') && !lower.contains('research')) {
+      final humanFields = <String, String>{};
+
+      // Phone
+      final phoneMatch = RegExp(r'(?:\+?92|0)?3\d{2}[-\s]?\d{7}|\b\d{10,11}\b').firstMatch(message);
+      if (phoneMatch != null) {
+        humanFields['phone'] = phoneMatch.group(0)!.trim();
+      }
+
+      // Email
+      final emailMatch = RegExp(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}').firstMatch(message);
+      if (emailMatch != null) {
+        humanFields['email'] = emailMatch.group(0)!.trim();
+      }
+
+      // CNIC / B-Form
+      final cnicMatch = RegExp(r'\d{5}-?\d{7}-?\d').firstMatch(message);
+      if (cnicMatch != null) {
+        humanFields['cnic'] = cnicMatch.group(0)!.trim();
+        humanFields['bForm'] = cnicMatch.group(0)!.trim();
+      }
+
+      // Name
+      final nameMatch = RegExp(r'(?:name\s*(?:is|:)?|for|student\s*(?:is|:)?)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)').firstMatch(message)
+          ?? RegExp(r'(?:put|enter|write)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s+(?:as|in|for)\s+(?:name|contact)').firstMatch(message)
+          ?? RegExp(r'(?:contact\s*(?:for)?)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)').firstMatch(message);
+      if (nameMatch != null) {
+        final fullName = nameMatch.group(1)!.trim();
+        if (fullName.contains(' ')) {
+          humanFields['firstName'] = fullName.split(' ').first;
+          humanFields['lastName'] = fullName.split(' ').sublist(1).join(' ');
+        } else {
+          humanFields['firstName'] = fullName;
+          humanFields['studentName'] = fullName;
+        }
+      }
+
+      if (humanFields.isNotEmpty) {
+        final writeRes = await AccessibilityBridge.writeFieldsWithVerification(
+          humanFields,
+          switchToExternal: !fromOverlay,
+        );
+        if (lower.contains('save') || lower.contains('done') || lower.contains('submit')) {
+          await Future.delayed(const Duration(milliseconds: 400));
+          await AccessibilityBridge.clickElement('Save') ||
+              await AccessibilityBridge.clickElement('Done') ||
+              await AccessibilityBridge.clickElement('Submit');
+        }
+        return '✨ Human Language Field Input Verified:\n$writeRes';
+      }
     }
 
     // 1. Check / Inspect existing writes

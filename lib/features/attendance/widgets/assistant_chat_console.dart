@@ -53,9 +53,11 @@ class AssistantChatConsole extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
                 SizedBox(width: 8),
-                Text(
-                  'OmniPilot is reasoning, searching Google & executing tools...',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                Expanded(
+                  child: Text(
+                    'OmniPilot is reasoning, searching Google & executing tools...',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
                 ),
               ],
             ),

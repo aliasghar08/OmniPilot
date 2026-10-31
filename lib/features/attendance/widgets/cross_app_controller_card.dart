@@ -170,9 +170,11 @@ class CrossAppControllerCard extends StatelessWidget {
                     children: [
                       Icon(Icons.phone_android, size: 16, color: Colors.blueGrey),
                       SizedBox(width: 6),
-                      Text(
-                        'Device Diagnostics (Samsung / Xiaomi / Oppo / Vivo / Infinix / Android 14)',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      Expanded(
+                        child: Text(
+                          'Device Diagnostics (Samsung / Xiaomi / Oppo / Vivo / Infinix / Android 14)',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
                       ),
                     ],
                   ),

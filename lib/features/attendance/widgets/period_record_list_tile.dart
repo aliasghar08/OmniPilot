@@ -29,10 +29,14 @@ class PeriodRecordListTile extends StatelessWidget {
         studentName.isNotEmpty
             ? '$studentName (${data['roll_no'] ?? '-'}) • $periodType'
             : 'Class ${data['class_id']}: $present/$total present',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
       ),
       subtitle: Text(
         'Present: $present/$total (+$leave Leave) • Effective: $pct% • $standing',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontSize: 12),
       ),
       trailing: const Icon(Icons.verified, size: 18, color: Colors.green),

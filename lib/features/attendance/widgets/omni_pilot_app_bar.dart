@@ -42,10 +42,13 @@ class OmniPilotAppBar extends StatelessWidget implements PreferredSizeWidget {
           ? null
           : TabBar(
               controller: tabController,
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
               tabs: const [
                 Tab(icon: Icon(Icons.settings_system_daydream), text: 'Cross-App AI'),
                 Tab(icon: Icon(Icons.assignment_turned_in), text: 'Period Form'),
                 Tab(icon: Icon(Icons.chat_bubble_outline), text: 'Assistant'),
+                Tab(icon: Icon(Icons.badge_outlined), text: 'Developer Info'),
               ],
             ),
     );

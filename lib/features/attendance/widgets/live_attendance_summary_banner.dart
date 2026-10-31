@@ -41,25 +41,49 @@ class LiveAttendanceSummaryBanner extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.insights, size: 18, color: standingColor),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'Effective Attendance: ${effectivePercentage.toStringAsFixed(1)}% (Raw: ${rawPercentage.toStringAsFixed(1)}%)',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13.5,
-                    color: standingColor,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 420;
+              final textWidget = Row(
+                children: [
+                  Icon(Icons.insights, size: 18, color: standingColor),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Effective Attendance: ${effectivePercentage.toStringAsFixed(1)}% (Raw: ${rawPercentage.toStringAsFixed(1)}%)',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: standingColor,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              StatusBadgeChip(
+                ],
+              );
+              final badgeWidget = StatusBadgeChip(
                 label: selectedStanding,
                 color: standingColor,
-              ),
-            ],
+              );
+
+              if (isNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    textWidget,
+                    const SizedBox(height: 6),
+                    badgeWidget,
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: textWidget),
+                  const SizedBox(width: 8),
+                  badgeWidget,
+                ],
+              );
+            },
           ),
           const SizedBox(height: 8),
           ClipRRect(

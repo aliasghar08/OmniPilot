@@ -178,19 +178,22 @@ class _InAppCustomizationCardState extends State<InAppCustomizationCard> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Input & Transition Delay',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      'Controls typing pacing for slow OEM apps (${_settings.inputDelayMs} ms)',
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                  ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Input & Transition Delay',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        'Controls typing pacing for slow OEM apps (${_settings.inputDelayMs} ms)',
+                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Text(
                   '${_settings.inputDelayMs} ms',
                   style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
@@ -236,30 +239,37 @@ class _InAppCustomizationCardState extends State<InAppCustomizationCard> {
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 6),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(
-                  value: 'smart_auto',
-                  label: Text('Smart Auto', style: TextStyle(fontSize: 11)),
-                  icon: Icon(Icons.auto_fix_high, size: 14),
+            SizedBox(
+              width: double.infinity,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 'smart_auto',
+                      label: Text('Smart Auto', style: TextStyle(fontSize: 11)),
+                      icon: Icon(Icons.auto_fix_high, size: 14),
+                    ),
+                    ButtonSegment(
+                      value: 'action_only',
+                      label: Text('Direct Only', style: TextStyle(fontSize: 11)),
+                      icon: Icon(Icons.flash_on, size: 14),
+                    ),
+                    ButtonSegment(
+                      value: 'clipboard',
+                      label: Text('Paste Only', style: TextStyle(fontSize: 11)),
+                      icon: Icon(Icons.content_paste, size: 14),
+                    ),
+                  ],
+                  selected: {_settings.typingStrategy},
+                  onSelectionChanged: (set) async {
+                    if (set.isNotEmpty) {
+                      await _settings.setTypingStrategy(set.first);
+                    }
+                  },
                 ),
-                ButtonSegment(
-                  value: 'action_only',
-                  label: Text('Direct Only', style: TextStyle(fontSize: 11)),
-                  icon: Icon(Icons.flash_on, size: 14),
-                ),
-                ButtonSegment(
-                  value: 'clipboard',
-                  label: Text('Paste Only', style: TextStyle(fontSize: 11)),
-                  icon: Icon(Icons.content_paste, size: 14),
-                ),
-              ],
-              selected: {_settings.typingStrategy},
-              onSelectionChanged: (set) async {
-                if (set.isNotEmpty) {
-                  await _settings.setTypingStrategy(set.first);
-                }
-              },
+              ),
             ),
 
             const Divider(height: 24),
@@ -268,19 +278,22 @@ class _InAppCustomizationCardState extends State<InAppCustomizationCard> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Floating HUD Opacity',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                    ),
-                    Text(
-                      'Transparency of overlay over other apps (${(_settings.overlayOpacity * 100).round()}%)',
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                  ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Floating HUD Opacity',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        'Transparency of overlay over other apps (${(_settings.overlayOpacity * 100).round()}%)',
+                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Text(
                   '${(_settings.overlayOpacity * 100).round()}%',
                   style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),

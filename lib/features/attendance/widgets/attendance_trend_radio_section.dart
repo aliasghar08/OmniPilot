@@ -27,27 +27,31 @@ class AttendanceTrendRadioSection extends StatelessWidget {
             border: Border.all(color: Colors.grey.shade300),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: RadioGroup<String>(
-            groupValue: selectedTrend,
-            onChanged: (val) {
-              if (val != null) onTrendChanged(val);
-            },
-            child: Row(
-              children: AppConstants.trendOptions.map((trend) {
-                return Expanded(
-                  child: RadioListTile<String>(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    visualDensity: VisualDensity.compact,
-                    title: Text(
-                      trend,
-                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                    ),
-                    value: trend,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 400;
+              final tiles = AppConstants.trendOptions.map((trend) {
+                final tile = RadioListTile<String>(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  visualDensity: VisualDensity.compact,
+                  title: Text(
+                    trend,
+                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                   ),
+                  value: trend,
                 );
-              }).toList(),
-            ),
+                return isNarrow ? tile : Expanded(child: tile);
+              }).toList();
+
+              return RadioGroup<String>(
+                groupValue: selectedTrend,
+                onChanged: (val) {
+                  if (val != null) onTrendChanged(val);
+                },
+                child: isNarrow ? Column(children: tiles) : Row(children: tiles),
+              );
+            },
           ),
         ),
       ],

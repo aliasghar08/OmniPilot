@@ -71,7 +71,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _tabController = TabController(length: 3, vsync: this, initialIndex: 1);
+    _tabController = TabController(length: 4, vsync: this, initialIndex: 0);
 
     AppSettingsService.instance.init();
     _checkPermissions();
@@ -576,6 +576,8 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                     lastClickableElements: _lastClickableElements,
                     lastScreenTexts: _lastScreenTexts,
                   ),
+                  const SizedBox(height: 16),
+                  const DeveloperInfoTab(),
                 ],
               ),
             ),
@@ -636,6 +638,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
           ),
         ),
         _buildChatConsoleWidget(),
+        const DeveloperInfoTab(),
       ],
     );
   }
