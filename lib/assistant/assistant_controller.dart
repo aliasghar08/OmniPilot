@@ -180,6 +180,10 @@ class AssistantController {
           'lateDays',
           'phone',
           'email',
+          'cnic',
+          'bForm',
+          'emisCode',
+          'percentage',
           'status',
         ]) {
           if (args[key] != null) {

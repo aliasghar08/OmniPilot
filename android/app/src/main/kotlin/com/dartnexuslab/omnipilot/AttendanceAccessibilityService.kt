@@ -762,6 +762,20 @@ class AttendanceAccessibilityService : AccessibilityService() {
                 listOf("email", "mail", "e-mail")
             "search", "query", "find" ->
                 listOf("search", "query", "find", "filter")
+            "cnic", "nic", "nationalid", "mothercnic", "parentcnic" ->
+                listOf("cnic", "nic", "national", "identity", "mother", "parent", "card")
+            "bform", "crc", "bayform", "birthcert", "childid", "bformnumber" ->
+                listOf("bform", "bayform", "b-form", "form-b", "crc", "child", "birth", "registration")
+            "emis", "emiscode", "schoolcode", "institutioncode", "school" ->
+                listOf("emis", "school", "institution", "campus", "center", "centre", "code")
+            "totalworkingdays", "workingdays", "totaldays" ->
+                listOf("total", "working", "period", "days")
+            "dayspresent", "presentdays", "attendeddays", "attended" ->
+                listOf("present", "attended", "actual", "days")
+            "attendancepercentage", "percentage", "rate" ->
+                listOf("percentage", "percent", "ratio", "rate", "%")
+            "gender" ->
+                listOf("gender", "sex")
             else -> listOf(normalizedKey)
         }
 

@@ -134,6 +134,7 @@ class FloatingBubbleService : Service() {
         var initialTouchX = 0f
         var initialTouchY = 0f
         var isClick = false
+        val clickSlop = dp(20)
 
         bubble.setOnTouchListener { _, event ->
             when (event.action) {
@@ -148,7 +149,7 @@ class FloatingBubbleService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     val deltaX = (event.rawX - initialTouchX).toInt()
                     val deltaY = (event.rawY - initialTouchY).toInt()
-                    if (Math.abs(deltaX) > 12 || Math.abs(deltaY) > 12) {
+                    if (Math.abs(deltaX) > clickSlop || Math.abs(deltaY) > clickSlop) {
                         isClick = false
                     }
                     params.x = initialX + deltaX
@@ -159,7 +160,9 @@ class FloatingBubbleService : Service() {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (isClick) {
+                    val deltaX = (event.rawX - initialTouchX).toInt()
+                    val deltaY = (event.rawY - initialTouchY).toInt()
+                    if (isClick && Math.abs(deltaX) <= clickSlop && Math.abs(deltaY) <= clickSlop) {
                         expandCommandPanel()
                     }
                     true
