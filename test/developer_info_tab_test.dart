@@ -34,3 +34,4 @@ void main() {
     expect(parsed['lateArrivalsCount'], equals(1));
   });
 }
+

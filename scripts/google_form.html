@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BISP Taleemi Wazaif Verification - Google Forms</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Google Sans', Roboto, -apple-system, Arial, sans-serif;
+    background: #ede7f6;
+    margin: 0;
+    padding: 16px 14px 60px;
+    color: #202124;
+  }
+  .ai-copilot-banner {
+    position: relative;
+    background: linear-gradient(135deg, #1e1b4b, #3730a3);
+    color: #ffffff;
+    border-radius: 12px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    margin-bottom: 14px;
+    border: 1px solid #4f46e5;
+  }
+  .ai-copilot-title {
+    font-weight: 700;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    letter-spacing: 0.2px;
+  }
+  .ai-fill-btn {
+    background: #6366f1;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    transition: transform 0.1s, background 0.2s;
+  }
+  .ai-fill-btn:active {
+    transform: scale(0.96);
+    background: #4f46e5;
+  }
+  .card {
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08);
+    transition: border-left 0.2s, box-shadow 0.2s;
+  }
+  .card.active-field {
+    border-left: 6px solid #673ab7;
+    box-shadow: 0 4px 14px rgba(103, 58, 183, 0.22);
+  }
+  .header {
+    border-top: 10px solid #673ab7;
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 8px;
+    color: #202124;
+  }
+  .desc {
+    font-size: 13px;
+    color: #5f6368;
+    line-height: 1.5;
+  }
+  .req-note {
+    font-size: 12px;
+    color: #d93025;
+    margin-top: 10px;
+  }
+  .q-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: #202124;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .req { color: #d93025; font-weight: bold; }
+  .check-mark {
+    color: #16a34a;
+    font-weight: 700;
+    font-size: 13px;
+    display: none;
+    background: #f0fdf4;
+    padding: 2px 8px;
+    border-radius: 12px;
+    border: 1px solid #bbf7d0;
+  }
+  input[type="text"], input[type="number"], input[type="tel"] {
+    width: 100%;
+    padding: 10px 0;
+    border: none;
+    border-bottom: 1px solid #dadce0;
+    font-size: 16px;
+    outline: none;
+    background: transparent;
+    color: #0f172a;
+    font-weight: 500;
+    font-family: inherit;
+    transition: border-bottom 0.2s;
+  }
+  input:focus {
+    border-bottom: 2px solid #673ab7;
+  }
+  .btn-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 16px;
+  }
+  .btn {
+    background: #673ab7;
+    color: white;
+    border: none;
+    padding: 12px 30px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+    transition: background 0.2s;
+  }
+  .btn:active {
+    background: #512da8;
+  }
+  .status-badge {
+    display: none;
+    padding: 18px;
+    background: #f0fdf4;
+    color: #166534;
+    border: 1.5px solid #86efac;
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 1.7;
+    margin-top: 18px;
+    box-shadow: 0 4px 12px rgba(22, 101, 52, 0.12);
+  }
+</style>
+</head>
+<body>
+
+<div class="ai-copilot-banner">
+  <div class="ai-copilot-title">
+    <span>🤖</span>
+    <span>OmniPilot AI Copilot Active</span>
+  </div>
+  <button id="ai_autofill_btn" class="ai-fill-btn" onclick="startAiAutoFill()">⚡ AutoFill Form</button>
+</div>
+
+<div class="card header" id="card_header">
+  <h1>BISP Taleemi Wazaif Verification</h1>
+  <div class="desc">Government of Pakistan • Benazir Taleemi Wazaif Attendance & Enrollment Compliance Form (Google Forms)</div>
+  <div class="req-note">* Indicates required question</div>
+</div>
+
+<div class="card" id="card_name">
+  <div class="q-title">
+    <span>Student Full Name <span class="req">*</span></span>
+    <span class="check-mark" id="check_name">✓ Filled</span>
+  </div>
+  <input type="text" id="student_name" placeholder="Your answer" autocomplete="off">
+</div>
+
+<div class="card" id="card_bform">
+  <div class="q-title">
+    <span>Student B-Form / CNIC Number <span class="req">*</span></span>
+    <span class="check-mark" id="check_bform">✓ Filled</span>
+  </div>
+  <input type="text" id="bform" placeholder="12345-6789012-3" autocomplete="off">
+</div>
+
+<div class="card" id="card_roll">
+  <div class="q-title">
+    <span>Roll Number / Class ID <span class="req">*</span></span>
+    <span class="check-mark" id="check_roll">✓ Filled</span>
+  </div>
+  <input type="text" id="roll_no" placeholder="Your answer" autocomplete="off">
+</div>
+
+<div class="card" id="card_days">
+  <div class="q-title">
+    <span>Days Present in Current Period (≥ 70% required) <span class="req">*</span></span>
+    <span class="check-mark" id="check_days">✓ Filled</span>
+  </div>
+  <input type="number" id="days_present" placeholder="Your answer" autocomplete="off">
+</div>
+
+<div class="card" id="card_emis">
+  <div class="q-title">
+    <span>School EMIS Code <span class="req">*</span></span>
+    <span class="check-mark" id="check_emis">✓ Filled</span>
+  </div>
+  <input type="text" id="emis_code" placeholder="Your answer" autocomplete="off">
+</div>
+
+<div class="card" id="card_phone">
+  <div class="q-title">
+    <span>Parent / Guardian Contact Phone <span class="req">*</span></span>
+    <span class="check-mark" id="check_phone">✓ Filled</span>
+  </div>
+  <input type="tel" id="phone" placeholder="0300-1234567" autocomplete="off">
+</div>
+
+<div class="btn-bar" id="btn_bar">
+  <button class="btn" id="submit_btn" onclick="submitForm()">Submit Form</button>
+</div>
+
+<div id="submitted_msg" class="status-badge">
+  <strong style="font-size: 15px;">✅ Form Verified & Submitted Successfully to BISP Taleemi Wazaif Database!</strong><br>
+  • Student Name: <strong id="out_name">Ali Asghar</strong><br>
+  • B-Form / CNIC: <strong id="out_bform">35201-1234567-1</strong><br>
+  • Roll Number: <strong id="out_roll">CS-2026-044</strong><br>
+  • Attendance Compliance: <strong id="out_att">24 Days (96% • Eligible for Quarterly Stipend)</strong><br>
+  • School EMIS Code: <strong>EMIS-5421</strong><br>
+  • Parent Phone: <strong>0300-1234567</strong><br>
+  • Verification Authority: <strong>OmniPilot Automated Accessibility Engine (Quantum Forge)</strong>
+</div>
+
+<script>
+  const formData = [
+    { card: 'card_name', input: 'student_name', check: 'check_name', text: 'Ali Asghar' },
+    { card: 'card_bform', input: 'bform', check: 'check_bform', text: '35201-1234567-1' },
+    { card: 'card_roll', input: 'roll_no', check: 'check_roll', text: 'CS-2026-044' },
+    { card: 'card_days', input: 'days_present', check: 'check_days', text: '24' },
+    { card: 'card_emis', input: 'emis_code', check: 'check_emis', text: 'EMIS-5421' },
+    { card: 'card_phone', input: 'phone', check: 'check_phone', text: '0300-1234567' }
+  ];
+
+  let isFilling = false;
+
+  function typeString(inputEl, str, onDone) {
+    inputEl.value = '';
+    let i = 0;
+    const interval = 20; // 20ms per letter for responsive typing
+    const t = setInterval(() => {
+      if (i < str.length) {
+        inputEl.value += str[i];
+        i++;
+      } else {
+        clearInterval(t);
+        if (onDone) onDone();
+      }
+    }, interval);
+  }
+
+  function startAiAutoFill() {
+    if (isFilling) return;
+    isFilling = true;
+    const btn = document.getElementById('ai_autofill_btn');
+    btn.textContent = '⏳ AI Typing...';
+    btn.style.background = '#eab308';
+
+    let index = 0;
+    function processField() {
+      if (index >= formData.length) {
+        btn.textContent = '✓ AI Filled';
+        btn.style.background = '#16a34a';
+        document.querySelectorAll('.card').forEach(c => c.classList.remove('active-field'));
+        if (document.activeElement) document.activeElement.blur();
+        setTimeout(() => {
+          document.getElementById('btn_bar').scrollIntoView({ behavior: 'smooth', block: 'center' });
+          setTimeout(submitForm, 600);
+        }, 300);
+        return;
+      }
+
+      const item = formData[index];
+      const card = document.getElementById(item.card);
+      const input = document.getElementById(item.input);
+      const check = document.getElementById(item.check);
+
+      document.querySelectorAll('.card').forEach(c => c.classList.remove('active-field'));
+      card.classList.add('active-field');
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      setTimeout(() => {
+        input.focus();
+        typeString(input, item.text, () => {
+          check.style.display = 'inline';
+          index++;
+          setTimeout(processField, 220);
+        });
+      }, 250);
+    }
+
+    processField();
+  }
+
+  function submitForm() {
+    if (document.activeElement) document.activeElement.blur();
+    const msg = document.getElementById('submitted_msg');
+    msg.style.display = 'block';
+    msg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  // Check URL param or hash for autoplay
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.location.search.includes('autofill=1') || window.location.hash.includes('autofill')) {
+      setTimeout(startAiAutoFill, 800);
+    }
+  });
+</script>
+
+</body>
+</html>

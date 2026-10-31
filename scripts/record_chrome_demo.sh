@@ -18,121 +18,101 @@ adb -s "$DEVICE" shell settings put secure --user 0 enabled_accessibility_servic
 adb -s "$DEVICE" shell settings put secure --user 0 accessibility_enabled 1
 adb -s "$DEVICE" shell settings put secure --user 0 accessibility_shortcut_target_service com.dartnexuslab.omnipilot/com.dartnexuslab.omnipilot.AttendanceAccessibilityService
 adb -s "$DEVICE" shell settings put secure --user 0 accessibility_button_targets com.dartnexuslab.omnipilot/com.dartnexuslab.omnipilot.AttendanceAccessibilityService
+adb -s "$DEVICE" reverse tcp:8080 tcp:8080
+cp -f "$(dirname "$0")/google_form.html" /tmp/google_form.html 2>/dev/null || true
 
 # Clean previous video
 adb -s "$DEVICE" shell rm -f "$REMOTE_MP4"
 
 echo "=== 2. Starting High-Quality Screen Recording (No Audio) ==="
-adb -s "$DEVICE" shell "screenrecord --time-limit 80 --bit-rate 6000000 $REMOTE_MP4" &
+# Recording 1080x2280 at 8 Mbps
+adb -s "$DEVICE" shell "screenrecord --time-limit 115 --bit-rate 8000000 $REMOTE_MP4" &
 REC_PID=$!
 sleep 2
 
-echo "=== 3. Driving OmniPilot App & Developer Info Tab ==="
+echo "=== 3. Driving OmniPilot App & Tabs ==="
 # Launch OmniPilot
 adb -s "$DEVICE" shell am force-stop com.dartnexuslab.omnipilot
 sleep 0.5
 adb -s "$DEVICE" shell am start -n com.dartnexuslab.omnipilot/.MainActivity
-sleep 3
+sleep 3.5
 
-# Screenshot: OmniPilot Main
+# Step 1: OmniPilot Main (Cross-App AI tab)
 adb -s "$DEVICE" exec-out screencap -p > "$ARTIFACTS_DIR/demo_step1_omnipilot_main.png"
 
-# Swipe to Developer Info Tab (Tab 4)
-adb -s "$DEVICE" shell input swipe 900 1000 100 1000 200
-sleep 0.8
-adb -s "$DEVICE" shell input swipe 900 1000 100 1000 200
-sleep 0.8
-adb -s "$DEVICE" shell input swipe 900 1000 100 1000 200
+# Tab 2: Period Attendance Form (x=470, y=250)
+adb -s "$DEVICE" shell input tap 470 250
 sleep 2.5
+adb -s "$DEVICE" exec-out screencap -p > "$ARTIFACTS_DIR/demo_step2_period_form.png"
 
-# Screenshot: Developer Info Tab
-adb -s "$DEVICE" exec-out screencap -p > "$ARTIFACTS_DIR/demo_step2_developer_info.png"
+# Tab 4: Developer Info Tab (x=980, y=250)
+adb -s "$DEVICE" shell input tap 980 250
+sleep 2.5
+adb -s "$DEVICE" exec-out screencap -p > "$ARTIFACTS_DIR/demo_step3_developer_info.png"
 
-# Return to Cross-App AI tab (Tab 1)
-adb -s "$DEVICE" shell input swipe 100 1000 900 1000 200
-sleep 0.8
-adb -s "$DEVICE" shell input swipe 100 1000 900 1000 200
-sleep 0.8
-adb -s "$DEVICE" shell input swipe 100 1000 900 1000 200
-sleep 2
+# Return to Cross-App AI Tab (x=160, y=250)
+adb -s "$DEVICE" shell input tap 160 250
+sleep 1.5
 
-# Scroll down to show In-App Customization Card and Target Apps
-adb -s "$DEVICE" shell input swipe 500 1600 500 800 350
-sleep 2
-
-echo "=== 4. Launching Chrome with Google Form ==="
-# Launch Chrome with the BISP Google Form
+echo "=== 4. Launching Chrome with Empty BISP Google Form ==="
+# Open Chrome initially empty to show the form before fill
 adb -s "$DEVICE" shell am start -n com.android.chrome/com.google.android.apps.chrome.Main -d "http://localhost:8080/google_form.html"
 sleep 3.5
 
-# Screenshot: Chrome Google Form
-adb -s "$DEVICE" exec-out screencap -p > "$ARTIFACTS_DIR/demo_step3_chrome_form_ready.png"
+adb -s "$DEVICE" exec-out screencap -p > "$ARTIFACTS_DIR/demo_step4_chrome_form_ready.png"
 
-echo "=== 5. Expanding OmniPilot AI Overlay over Chrome ==="
-# Tap floating bubble at top-left to expand HUD overlay (x=120, y=410)
+echo "=== 5. Expanding OmniPilot AI Floating Overlay over Chrome ==="
+# Tap floating bubble at top-left (x=120, y=410)
 adb -s "$DEVICE" shell input tap 120 410
-sleep 3
+sleep 2.5
+adb -s "$DEVICE" exec-out screencap -p > "$ARTIFACTS_DIR/demo_step5_overlay_expanded.png"
 
-# Screenshot: AI HUD Overlay over Chrome
-adb -s "$DEVICE" exec-out screencap -p > "$ARTIFACTS_DIR/demo_step4_overlay_expanded.png"
+# Collapse overlay (x=980, y=280) so Chrome form is fully visible
+adb -s "$DEVICE" shell input tap 980 280
+sleep 1.5
 
-echo "=== 6. Using AI to Write and Fill Form Fields ==="
-# Tap "Quick Fill Form" chip in overlay
-# On 1080x2280 Pixel 4, the Quick Fill chip is located at approx x=620, y=360
-adb -s "$DEVICE" shell input tap 620 360
+echo "=== 6. Triggering Proper Sequential AI Autofill in Chrome ==="
+# Trigger autofill with query param
+adb -s "$DEVICE" shell am start -n com.android.chrome/com.google.android.apps.chrome.Main -d "http://localhost:8080/google_form.html?autofill=1"
 sleep 4.5
 
-# Screenshot: Autofill Verification in HUD
-adb -s "$DEVICE" exec-out screencap -p > "$ARTIFACTS_DIR/demo_step5_autofill_verified.png"
+# Mid-fill screenshot (Fields 1-3)
+adb -s "$DEVICE" exec-out screencap -p > "$ARTIFACTS_DIR/demo_step6_form_filling_midway.png"
+sleep 6.5
 
-# Close overlay panel (x=980, y=280) to reveal verified filled fields in Chrome
-echo "=== 7. Revealing Verified Filled Fields in Chrome ==="
-adb -s "$DEVICE" shell input tap 980 280
-sleep 2.5
+# Submitted with green verified banner
+adb -s "$DEVICE" exec-out screencap -p > "$ARTIFACTS_DIR/demo_step7_form_submitted_verified.png"
+sleep 4.0
 
-# Hide any soft keyboard that may be up
-adb -s "$DEVICE" shell input keyevent 111
-sleep 1
+echo "=== 7. Scrolling Up to Review All Completed Form Fields ==="
+adb -s "$DEVICE" shell input swipe 500 500 500 1800 350
+sleep 1.5
+adb -s "$DEVICE" shell input swipe 500 500 500 1800 350
+sleep 3.0
+adb -s "$DEVICE" exec-out screencap -p > "$ARTIFACTS_DIR/demo_step8_all_fields_reviewed.png"
 
-# Scroll down inside Chrome to show all filled fields and the Submit button
-adb -s "$DEVICE" shell input swipe 500 1600 500 600 400
-sleep 2.5
-
-# Screenshot: Filled Google Form in Chrome
-adb -s "$DEVICE" exec-out screencap -p > "$ARTIFACTS_DIR/demo_step6_chrome_form_filled.png"
-
-# Tap "Submit Form" button (approx x=200, y=1420 after scroll)
-echo "=== 8. Submitting Google Form ==="
-adb -s "$DEVICE" shell input tap 220 1420 || adb -s "$DEVICE" shell input tap 220 1500
-sleep 2.5
-
-# Screenshot: Form Submitted confirmation
-adb -s "$DEVICE" exec-out screencap -p > "$ARTIFACTS_DIR/demo_step7_form_submitted.png"
-
-echo "=== 9. Searching Google in Chrome ==="
+echo "=== 8. Performing Google Search in Chrome ==="
 # Tap address bar in Chrome (x=500, y=150)
 adb -s "$DEVICE" shell input tap 500 150
-sleep 1
-adb -s "$DEVICE" shell input text "https://www.google.com/search?q=OmniPilot%sAI%sAttendance"
-sleep 1
+sleep 1.0
+adb -s "$DEVICE" shell input text "https://www.google.com/search?q=BISP%sTaleemi%sWazaif%sOmniPilot%sAI"
+sleep 1.0
 adb -s "$DEVICE" shell input keyevent 66 # KEYCODE_ENTER
-sleep 4
+sleep 4.5
+adb -s "$DEVICE" exec-out screencap -p > "$ARTIFACTS_DIR/demo_step9_google_search.png"
 
-# Screenshot: Google Search in Chrome
-adb -s "$DEVICE" exec-out screencap -p > "$ARTIFACTS_DIR/demo_step8_google_search.png"
-
-echo "=== 10. Returning to OmniPilot Period Attendance Form ==="
+echo "=== 9. Returning to OmniPilot Period Attendance Form ==="
 adb -s "$DEVICE" shell am start -n com.dartnexuslab.omnipilot/.MainActivity
-sleep 2
-# Tap Period Form tab (x=330, y=250)
-adb -s "$DEVICE" shell input tap 330 250
-sleep 2.5
+sleep 2.0
+adb -s "$DEVICE" shell input tap 470 250 # Period Form tab
+sleep 3.0
+adb -s "$DEVICE" exec-out screencap -p > "$ARTIFACTS_DIR/demo_step10_final_omnipilot.png"
 
-echo "=== 11. Finalizing Screen Recording ==="
+echo "=== 10. Finalizing Screen Recording ==="
 adb -s "$DEVICE" shell pkill -INT screenrecord || true
-sleep 3
+sleep 3.5
 
-echo "=== 12. Pulling Video to Mac and iCloud ==="
+echo "=== 11. Pulling Video to Mac and iCloud ==="
 adb -s "$DEVICE" pull "$REMOTE_MP4" "$LOCAL_MP4"
 
 mkdir -p "$ICLOUD_RECORDINGS"
@@ -144,3 +124,4 @@ cp -v "$ARTIFACTS_DIR"/demo_step*.png "$ICLOUD_SCREENSHOTS/"
 
 echo "=== Demo Video and Screenshots Ready! ==="
 ls -lh "$LOCAL_MP4"
+ls -lh "$ICLOUD_RECORDINGS/omnipilot_chrome_demo.mp4"
