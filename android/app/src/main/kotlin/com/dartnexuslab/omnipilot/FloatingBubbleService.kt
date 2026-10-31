@@ -658,14 +658,17 @@ class FloatingBubbleService : Service() {
         for ((i, f) in fields.withIndex()) {
             val lbl = (f["label"]?.toString() ?: "").lowercase()
             val value = when {
+                lbl.contains("bform") || lbl.contains("b-form") || lbl.contains("cnic") -> "35201-1234567-1"
+                lbl.contains("emis") -> "EMIS-5421"
+                lbl.contains("present") || lbl.contains("attendance") || lbl.contains("days") -> "24"
                 lbl.contains("first") -> "Ali"
                 lbl.contains("last") || lbl.contains("surname") -> "Asghar"
                 lbl.contains("name") || lbl.contains("student") -> "Ali Asghar"
                 lbl.contains("company") || lbl.contains("class") || lbl.contains("grade") || lbl.contains("school") -> "Class 10-A"
-                lbl.contains("phone") || lbl.contains("mobile") || lbl.contains("tel") -> "5550192834"
-                lbl.contains("roll") || lbl.contains("id") || lbl.contains("number") -> "12"
-                lbl.contains("email") || lbl.contains("mail") -> "ali.asghar@school.edu"
-                lbl.contains("note") || lbl.contains("status") || lbl.contains("remark") -> "Present"
+                lbl.contains("phone") || lbl.contains("mobile") || lbl.contains("tel") -> "0300-1234567"
+                lbl.contains("roll") || lbl.contains("id") || lbl.contains("number") -> "CS-2026-044"
+                lbl.contains("email") || lbl.contains("mail") -> "aliasgharinnocent@yahoo.com"
+                lbl.contains("note") || lbl.contains("status") || lbl.contains("remark") -> "Good Standing (96% Attendance)"
                 else -> sampleValues[i % sampleValues.size]
             }
             payload["#$i"] = value
