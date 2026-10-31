@@ -211,35 +211,37 @@ class CrossAppControllerCard extends StatelessWidget {
             ),
             const SizedBox(height: 14),
 
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: () => onInspectScreen(false),
-                  icon: const Icon(Icons.search, size: 18),
-                  label: const Text('Inspect Active Window'),
-                ),
-                FilledButton.tonalIcon(
-                  onPressed: () => onInspectScreen(true),
-                  icon: const Icon(Icons.open_in_new, size: 18),
-                  label: const Text('Switch & Inspect External App'),
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.contacts, size: 16),
-                  label: const Text('Open Contacts'),
-                  onPressed: () async {
-                    await AccessibilityBridge.launchExternalApp('Contacts');
-                  },
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.note_alt_outlined, size: 16),
-                  label: const Text('Open Notes'),
-                  onPressed: () async {
-                    await AccessibilityBridge.launchExternalApp('org.fossify.notes');
-                  },
-                ),
-              ],
+            const SizedBox(height: 10),
+            AnimatedBuilder(
+              animation: AppSettingsService.instance,
+              builder: (context, _) {
+                final shortcuts = AppSettingsService.instance.shortcuts;
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => onInspectScreen(false),
+                      icon: const Icon(Icons.search, size: 18),
+                      label: const Text('Inspect Active Window'),
+                    ),
+                    FilledButton.tonalIcon(
+                      onPressed: () => onInspectScreen(true),
+                      icon: const Icon(Icons.open_in_new, size: 18),
+                      label: const Text('Switch & Inspect External App'),
+                    ),
+                    ...shortcuts.map((s) {
+                      return ActionChip(
+                        avatar: const Icon(Icons.launch, size: 14),
+                        label: Text('Open ${s.name}'),
+                        onPressed: () async {
+                          await AccessibilityBridge.launchExternalApp(s.packageOrQuery);
+                        },
+                      );
+                    }),
+                  ],
+                );
+              },
             ),
           ],
         ),

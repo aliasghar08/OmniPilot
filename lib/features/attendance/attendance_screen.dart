@@ -73,6 +73,7 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 3, vsync: this, initialIndex: 1);
 
+    AppSettingsService.instance.init();
     _checkPermissions();
 
     for (final c in [
@@ -568,6 +569,8 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                         _inspectCurrentScreen(switchToExternal: switchToExt),
                   ),
                   const SizedBox(height: 16),
+                  const InAppCustomizationCard(),
+                  const SizedBox(height: 16),
                   DiscoveredFieldsCard(
                     lastInspectedFields: _lastInspectedFields,
                     lastClickableElements: _lastClickableElements,
@@ -610,6 +613,8 @@ class _AttendanceScreenState extends State<AttendanceScreen>
                 onInspectScreen: (switchToExt) =>
                     _inspectCurrentScreen(switchToExternal: switchToExt),
               ),
+              const SizedBox(height: 16),
+              const InAppCustomizationCard(),
               const SizedBox(height: 16),
               DiscoveredFieldsCard(
                 lastInspectedFields: _lastInspectedFields,

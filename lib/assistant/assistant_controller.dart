@@ -221,16 +221,19 @@ class AssistantController {
         }
 
         final append = (args['append'] as bool?) ?? false;
+        final delayMs = AppSettingsService.instance.inputDelayMs;
+        final shouldSwitch = (args['switchToExternal'] as bool?) ??
+            (!fromOverlay && AppSettingsService.instance.autoSwitchToExternal);
         final writeResults = await AccessibilityBridge.writeFieldsWithVerification(
           fieldMap,
           append: append,
-          switchToExternal: !fromOverlay,
+          switchToExternal: shouldSwitch,
         );
 
         bool clickedSubmit = false;
         final submitButton = args['submitButton']?.toString();
         if (submitButton != null && submitButton.trim().isNotEmpty) {
-          await Future.delayed(const Duration(milliseconds: 250));
+          await Future.delayed(Duration(milliseconds: delayMs));
           clickedSubmit = await AccessibilityBridge.clickElement(submitButton.trim());
         }
 
