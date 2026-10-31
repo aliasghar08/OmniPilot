@@ -89,6 +89,16 @@ class AccessibilityBridge {
     } catch (_) {}
   }
 
+  /// Opens proprietary OEM Auto-Start / Background App Management screen on Xiaomi, Oppo, Vivo, Huawei, Transsion, or Samsung.
+  static Future<bool> openAutoStartSettings() async {
+    try {
+      final bool? launched = await _channel.invokeMethod<bool>('openAutoStartSettings');
+      return launched ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Traverses the active external window and returns metadata for all editable fields.
   static Future<List<Map<String, dynamic>>> inspectActiveWindow() async {
     final List<dynamic>? raw = await _channel.invokeMethod<List<dynamic>>('inspectActiveWindow');

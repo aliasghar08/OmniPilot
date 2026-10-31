@@ -125,15 +125,30 @@ class MainActivity : FlutterActivity() {
                     "requestIgnoreBatteryOptimizations" -> {
                         try {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                                val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                                try {
+                                    val directIntent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                        data = Uri.parse("package:$packageName")
+                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                    }
+                                    startActivity(directIntent)
+                                    result.success(true)
+                                    return@setMethodCallHandler
+                                } catch (_: Exception) {}
+
+                                val listIntent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
                                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                                 }
-                                startActivity(intent)
+                                startActivity(listIntent)
                             }
                             result.success(true)
                         } catch (e: Exception) {
                             result.error("ERROR", e.localizedMessage, null)
                         }
+                    }
+
+                    "openAutoStartSettings" -> {
+                        val launched = openOemAutoStartSettings()
+                        result.success(launched)
                     }
 
                     "inspectActiveWindow" -> {
@@ -428,6 +443,50 @@ class MainActivity : FlutterActivity() {
                     callback("Assistant engine not ready.")
                 }
             }
+        }
+    }
+
+    private fun openOemAutoStartSettings(): Boolean {
+        val oemIntents = listOf(
+            // Xiaomi / HyperOS / MIUI
+            Intent().setComponent(android.content.ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")),
+            // Oppo / Realme / OnePlus ColorOS / OxygenOS
+            Intent().setComponent(android.content.ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity")),
+            Intent().setComponent(android.content.ComponentName("com.coloros.safecenter", "com.coloros.safecenter.startupapp.StartupAppListActivity")),
+            Intent().setComponent(android.content.ComponentName("com.oplus.safecenter", "com.oplus.safecenter.startupapp.StartupAppListActivity")),
+            // Vivo / iQOO FuntouchOS / OriginOS
+            Intent().setComponent(android.content.ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity")),
+            Intent().setComponent(android.content.ComponentName("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity")),
+            // Huawei / Honor EMUI / HarmonyOS
+            Intent().setComponent(android.content.ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity")),
+            Intent().setComponent(android.content.ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.appcontrol.activity.StartupAppControlActivity")),
+            // Transsion / Infinix / Tecno (XOS / HiOS)
+            Intent().setComponent(android.content.ComponentName("com.transsion.phonemanager", "com.transsion.phonemanager.view.AppAutoRunActivity")),
+            Intent().setComponent(android.content.ComponentName("com.transsion.phonemaster", "com.transsion.phonemaster.autostart.AutoStartActivity")),
+            // Samsung Device Care / Battery
+            Intent().setComponent(android.content.ComponentName("com.samsung.android.lool", "com.samsung.android.sm.ui.battery.BatteryActivity"))
+        )
+
+        for (intent in oemIntents) {
+            try {
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                if (packageManager.resolveActivity(intent, 0) != null) {
+                    startActivity(intent)
+                    return true
+                }
+            } catch (_: Exception) {}
+        }
+
+        // Fallback to Application Details Settings (App Info)
+        return try {
+            val appInfoIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:$packageName")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            startActivity(appInfoIntent)
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 }

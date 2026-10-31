@@ -171,14 +171,14 @@ class CrossAppControllerCard extends StatelessWidget {
                       Icon(Icons.phone_android, size: 16, color: Colors.blueGrey),
                       SizedBox(width: 6),
                       Text(
-                        'Device Diagnostics (Infinix / XOS / Android 14)',
+                        'Device Diagnostics (Samsung / Xiaomi / Oppo / Vivo / Infinix / Android 14)',
                         style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    'If assistant closes when switching apps, allow Unrestricted Battery and Pop-up windows in App Info.',
+                    'Ensure Unrestricted Battery and Auto-Start are enabled so OEM task killers do not suspend background AI automation.',
                     style: TextStyle(fontSize: 11, color: Colors.black54),
                   ),
                   const SizedBox(height: 8),
@@ -193,7 +193,18 @@ class CrossAppControllerCard extends StatelessWidget {
                         ),
                         onPressed: onRequestIgnoreBattery,
                         icon: const Icon(Icons.battery_charging_full, size: 14),
-                        label: const Text('Battery Optimization (Unrestricted)'),
+                        label: const Text('Battery (Unrestricted Dialog)'),
+                      ),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          textStyle: const TextStyle(fontSize: 11),
+                        ),
+                        onPressed: () async {
+                          await AccessibilityBridge.openAutoStartSettings();
+                        },
+                        icon: const Icon(Icons.rocket_launch, size: 14),
+                        label: const Text('Auto-Start / Background Manager'),
                       ),
                       OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(

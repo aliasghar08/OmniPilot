@@ -46,6 +46,16 @@ class AttendanceAccessibilityService : AccessibilityService() {
         "com.android.systemui",
         "com.google.android.inputmethod.latin",
         "com.samsung.android.honeyboard",
+        "com.touchtype.swiftkey",
+        "com.sohu.inputmethod.sogou",
+        "com.baidu.input",
+        "com.sec.android.app.launcher",
+        "com.miui.home",
+        "com.oppo.launcher",
+        "com.vivo.launcher",
+        "com.huawei.android.launcher",
+        "com.transsion.XOSLauncher",
+        "com.transsion.hilauncher",
         "com.android.inputmethod.latin"
     )
 
