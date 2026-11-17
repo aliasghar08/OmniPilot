@@ -19,6 +19,8 @@ class PermissionStatusTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final isNarrow = constraints.maxWidth < 360;
@@ -35,7 +37,11 @@ class PermissionStatusTile extends StatelessWidget {
                     Expanded(
                       child: Text(
                         title,
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13.5,
+                          color: colorScheme.onSurface,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -45,7 +51,7 @@ class PermissionStatusTile extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: const TextStyle(fontSize: 11.5, color: Colors.grey),
+                  style: TextStyle(fontSize: 11.5, color: colorScheme.onSurfaceVariant),
                 ),
               ],
             ),
@@ -56,11 +62,11 @@ class PermissionStatusTile extends StatelessWidget {
           leading: Icon(icon, color: iconColor),
           title: Text(
             title,
-            style: const TextStyle(fontWeight: FontWeight.w600),
+            style: TextStyle(fontWeight: FontWeight.w600, color: colorScheme.onSurface),
           ),
           subtitle: Text(
             subtitle,
-            style: const TextStyle(fontSize: 12),
+            style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
           ),
           trailing: trailing,
         );

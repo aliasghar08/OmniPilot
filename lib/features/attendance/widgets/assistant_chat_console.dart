@@ -43,20 +43,20 @@ class AssistantChatConsole extends StatelessWidget {
           ),
         ),
         if (isProcessing)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Row(
               children: [
-                SizedBox(
+                const SizedBox(
                   width: 14,
                   height: 14,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-                SizedBox(width: 8),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'OmniPilot is reasoning, searching Google & executing tools...',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
                 ),
               ],
@@ -71,8 +71,8 @@ class AssistantChatConsole extends StatelessWidget {
                 child: TextField(
                   controller: inputController,
                   decoration: InputDecoration(
-                    hintText: 'Ask OmniPilot to search Google, fill period forms, or control apps...',
-                    hintStyle: const TextStyle(fontSize: 14),
+                    hintText: 'Ask OmniPilot to search Google, inspect active screens, or control apps...',
+                    hintStyle: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.7)),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(24),

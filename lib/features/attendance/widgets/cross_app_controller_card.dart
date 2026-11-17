@@ -32,8 +32,11 @@ class CrossAppControllerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Card(
-      elevation: 2,
+      elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(20.0),
@@ -56,7 +59,7 @@ class CrossAppControllerCard extends StatelessWidget {
                         activeExternalPackage.isNotEmpty
                             ? 'Target App: $activeExternalPackage'
                             : 'Writes, verifies & controls any Android app in real time',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
                       ),
                     ],
                   ),
@@ -71,18 +74,18 @@ class CrossAppControllerCard extends StatelessWidget {
                 padding: const EdgeInsets.all(12),
                 margin: const EdgeInsets.only(bottom: 12),
                 decoration: BoxDecoration(
-                  color: Colors.amber.shade50,
+                  color: isDark ? Colors.amber.withValues(alpha: 0.15) : Colors.amber.shade50,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.amber.shade400),
+                  border: Border.all(color: isDark ? Colors.amber.shade700 : Colors.amber.shade400),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.warning_amber_rounded, color: Colors.amber.shade900, size: 24),
+                    Icon(Icons.warning_amber_rounded, color: isDark ? Colors.amber.shade300 : Colors.amber.shade900, size: 24),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         'Accessibility is enabled in Settings, but Infinix/XOS battery manager suspended the service process. Tap "Re-toggle" to turn it OFF and ON, and set Battery to Unrestricted.',
-                        style: TextStyle(fontSize: 12, color: Colors.amber.shade900),
+                        style: TextStyle(fontSize: 12, color: isDark ? Colors.amber.shade300 : Colors.amber.shade900),
                       ),
                     ),
                   ],
@@ -95,7 +98,7 @@ class CrossAppControllerCard extends StatelessWidget {
                   : (isA11ySettingOn ? Icons.warning_amber_rounded : Icons.error_outline),
               iconColor: isA11yEnabled
                   ? Colors.green
-                  : (isA11ySettingOn ? Colors.amber.shade800 : Colors.orange),
+                  : (isA11ySettingOn ? (isDark ? Colors.amber.shade400 : Colors.amber.shade800) : Colors.orange),
               title: isA11yEnabled
                   ? 'Android Accessibility Service'
                   : (isA11ySettingOn ? 'Accessibility Suspended by System' : 'Android Accessibility Service'),
@@ -106,7 +109,10 @@ class CrossAppControllerCard extends StatelessWidget {
                       : 'Disabled • Enable in Settings to control external apps'),
               trailing: FilledButton.tonal(
                 style: (!isA11yEnabled && isA11ySettingOn)
-                    ? FilledButton.styleFrom(backgroundColor: Colors.amber.shade100, foregroundColor: Colors.amber.shade900)
+                    ? FilledButton.styleFrom(
+                        backgroundColor: isDark ? Colors.amber.shade900.withValues(alpha: 0.4) : Colors.amber.shade100,
+                        foregroundColor: isDark ? Colors.amber.shade200 : Colors.amber.shade900,
+                      )
                     : null,
                 onPressed: () async {
                   await AccessibilityBridge.openAccessibilitySettings();
@@ -119,19 +125,25 @@ class CrossAppControllerCard extends StatelessWidget {
             // 2. Display Over Other Apps Tile (Critical for Infinix / Android 14)
             PermissionStatusTile(
               icon: canDrawOverlays ? Icons.check_circle : Icons.warning_amber_rounded,
-              iconColor: canDrawOverlays ? Colors.green : Colors.amber.shade800,
+              iconColor: canDrawOverlays ? Colors.green : (isDark ? Colors.amber.shade400 : Colors.amber.shade800),
               title: 'Display Over Other Apps (Overlay)',
               subtitle: canDrawOverlays
                   ? 'Granted • Assistant bubble authorized to show on top of any app'
                   : 'Required for floating assistant. Tap to authorize in Android settings',
               trailing: canDrawOverlays
-                  ? const Chip(
-                      label: Text('Granted', style: TextStyle(fontSize: 12)),
-                      backgroundColor: Color(0xFFDCFCE7),
+                  ? Chip(
+                      label: Text(
+                        'Granted',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF065F46),
+                        ),
+                      ),
+                      backgroundColor: isDark ? const Color(0xFF064E3B) : const Color(0xFFDCFCE7),
                       side: BorderSide.none,
                     )
                   : FilledButton(
-                      style: FilledButton.styleFrom(backgroundColor: Colors.amber.shade800),
+                      style: FilledButton.styleFrom(backgroundColor: isDark ? const Color(0xFFD97706) : Colors.amber.shade800),
                       onPressed: onRequestOverlay,
                       child: const Text('Grant'),
                     ),
@@ -236,9 +248,9 @@ class CrossAppControllerCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     'Ensure Unrestricted Battery and Auto-Start are enabled so OEM task killers do not suspend background AI automation.',
-                    style: TextStyle(fontSize: 11, color: Colors.black54),
+                    style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
@@ -334,6 +346,9 @@ class CrossAppControllerCard extends StatelessWidget {
               builder: (context, snapshot) {
                 final apps = snapshot.data ?? [];
                 final isLoading = snapshot.connectionState == ConnectionState.waiting;
+                final theme = Theme.of(context);
+                final colorScheme = theme.colorScheme;
+                final isDark = theme.brightness == Brightness.dark;
 
                 return SafeArea(
                   child: Padding(
@@ -370,9 +385,9 @@ class CrossAppControllerCard extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 4),
-                        const Text(
+                        Text(
                           'Apps you have authorized OmniPilot to access & automate. You can revoke access anytime.',
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                          style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
                         ),
                         const Divider(height: 20),
                         if (isLoading)
@@ -388,17 +403,17 @@ class CrossAppControllerCard extends StatelessWidget {
                             child: Center(
                               child: Column(
                                 children: [
-                                  Icon(Icons.lock_outline_rounded, size: 40, color: Colors.grey.shade400),
+                                  Icon(Icons.lock_outline_rounded, size: 40, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
                                   const SizedBox(height: 8),
                                   const Text(
                                     'No third-party apps authorized yet.',
                                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                                   ),
                                   const SizedBox(height: 4),
-                                  const Text(
+                                  Text(
                                     'OmniPilot requests permission via popup when you first target an app.',
                                     textAlign: TextAlign.center,
-                                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                                    style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
                                   ),
                                 ],
                               ),
@@ -419,14 +434,17 @@ class CrossAppControllerCard extends StatelessWidget {
                                 return ListTile(
                                   contentPadding: EdgeInsets.zero,
                                   leading: CircleAvatar(
-                                    backgroundColor: Colors.teal.shade50,
+                                    backgroundColor: isDark ? const Color(0xFF134E4A) : Colors.teal.shade50,
                                     child: Text(
                                       label.isNotEmpty ? label[0].toUpperCase() : 'A',
-                                      style: TextStyle(color: Colors.teal.shade800, fontWeight: FontWeight.bold),
+                                      style: TextStyle(
+                                        color: isDark ? const Color(0xFF5EEAD4) : Colors.teal.shade800,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
                                   title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                  subtitle: Text(pkg, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                  subtitle: Text(pkg, style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
                                   trailing: TextButton.icon(
                                     style: TextButton.styleFrom(foregroundColor: Colors.red),
                                     onPressed: () async {

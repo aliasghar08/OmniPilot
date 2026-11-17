@@ -17,6 +17,9 @@ class DiscoveredFieldsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colorScheme = Theme.of(context).colorScheme;
+
     final models = List.generate(
       lastInspectedFields.length,
       (i) => ExternalFieldModel.fromMap(i, lastInspectedFields[i]),
@@ -33,7 +36,7 @@ class DiscoveredFieldsCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.fact_check_outlined, size: 20, color: Colors.indigo),
+                Icon(Icons.fact_check_outlined, size: 20, color: isDark ? const Color(0xFF818CF8) : Colors.indigo),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -45,11 +48,11 @@ class DiscoveredFieldsCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             if (models.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12.0),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12.0),
                 child: Text(
                   'No external fields inspected yet. Open another app and tap the Floating Bubble, or tap "Switch & Inspect External App" above.',
-                  style: TextStyle(color: Colors.grey, fontSize: 13),
+                  style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13),
                 ),
               )
             else
@@ -65,22 +68,23 @@ class DiscoveredFieldsCard extends StatelessWidget {
                     dense: true,
                     leading: CircleAvatar(
                       radius: 14,
-                      backgroundColor:
-                          f.isPopulated ? Colors.green.shade100 : Colors.grey.shade200,
+                      backgroundColor: f.isPopulated
+                          ? (isDark ? const Color(0xFF064E3B) : Colors.green.shade100)
+                          : (isDark ? colorScheme.surfaceContainerHighest : Colors.grey.shade200),
                       child: Text(
                         '#${f.index}',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
                           color: f.isPopulated
-                              ? Colors.green.shade900
-                              : Colors.grey.shade800,
+                              ? (isDark ? const Color(0xFF6EE7B7) : Colors.green.shade900)
+                              : (isDark ? colorScheme.onSurface : Colors.grey.shade800),
                         ),
                       ),
                     ),
                     title: Text(
                       f.displayLabel,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      style: TextStyle(fontWeight: FontWeight.w600, color: colorScheme.onSurface),
                     ),
                     subtitle: Text(
                       f.isPopulated
@@ -88,8 +92,8 @@ class DiscoveredFieldsCard extends StatelessWidget {
                           : '⬜ Empty • ID: ${f.shortId}',
                       style: TextStyle(
                         color: f.isPopulated
-                            ? Colors.green.shade800
-                            : Colors.grey.shade700,
+                            ? (isDark ? const Color(0xFF86EFAC) : Colors.green.shade800)
+                            : colorScheme.onSurfaceVariant,
                         fontWeight:
                             f.isPopulated ? FontWeight.w500 : FontWeight.normal,
                       ),
@@ -99,9 +103,9 @@ class DiscoveredFieldsCard extends StatelessWidget {
               ),
             if (lastClickableElements.isNotEmpty) ...[
               const Divider(height: 24),
-              Text(
-                'Detected Buttons & Controls (${lastClickableElements.length})',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              const Text(
+                'Detected Buttons & Controls',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -123,14 +127,14 @@ class DiscoveredFieldsCard extends StatelessWidget {
             ],
             if (lastScreenTexts.isNotEmpty) ...[
               const Divider(height: 24),
-              Text(
-                'Screen Text Snapshot (${lastScreenTexts.length} items)',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              const Text(
+                'Screen Text Snapshot',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
               ),
               const SizedBox(height: 6),
               Text(
                 lastScreenTexts.take(15).join(' • '),
-                style: const TextStyle(fontSize: 12, color: Colors.blueGrey),
+                style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
               ),
             ],
           ],

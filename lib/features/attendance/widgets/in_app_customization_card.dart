@@ -215,7 +215,7 @@ class _InAppCustomizationCardState extends State<InAppCustomizationCard> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Auto-Switch to External App', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Bring target app to the foreground during automation', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              subtitle: Text('Bring target app to the foreground during automation', style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant)),
               value: _settings.autoSwitchToExternal,
               onChanged: (val) async {
                 await _settings.setAutoSwitchToExternal(val);
@@ -224,7 +224,7 @@ class _InAppCustomizationCardState extends State<InAppCustomizationCard> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Read-Back Write Verification', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Verify node text matches after writing to prevent missed fields', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              subtitle: Text('Verify node text matches after writing to prevent missed fields', style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant)),
               value: _settings.verifyWrites,
               onChanged: (val) async {
                 await _settings.setVerifyWrites(val);
@@ -288,7 +288,7 @@ class _InAppCustomizationCardState extends State<InAppCustomizationCard> {
                       ),
                       Text(
                         'Transparency of overlay over other apps (${(_settings.overlayOpacity * 100).round()}%)',
-                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                        style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                     ],
                   ),
@@ -296,7 +296,7 @@ class _InAppCustomizationCardState extends State<InAppCustomizationCard> {
                 const SizedBox(width: 8),
                 Text(
                   '${(_settings.overlayOpacity * 100).round()}%',
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary),
                 ),
               ],
             ),
