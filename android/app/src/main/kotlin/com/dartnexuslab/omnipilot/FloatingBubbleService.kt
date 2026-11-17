@@ -244,9 +244,7 @@ class FloatingBubbleService : Service() {
         }
 
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        setupSlidingEdgeHandle()
         setupFloatingStatusBubble()
-        setupFloatingCommandPanel()
 
         // Initialize Android TextToSpeech engine
         try {
@@ -302,108 +300,10 @@ class FloatingBubbleService : Service() {
     }
 
     /**
-     * Sets up a sleek, flush edge sliding tab/handle docked to the right edge of the screen.
-     * Replaces the floating round overlay icon with an unobtrusive edge slider.
+     * Interactive floating AI assistant handle removed per user request.
      */
     private fun setupSlidingEdgeHandle() {
-        val handleWidth = dp(14)
-        val handleHeight = dp(76)
-        val screenH = resources.displayMetrics.heightPixels
-
-        val params = WindowManager.LayoutParams(
-            handleWidth,
-            handleHeight,
-            overlayLayoutType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.END
-            x = 0
-            y = (screenH * 0.32).toInt()
-        }
-        bubbleParams = params
-
-        val handleContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL or Gravity.END
-            isClickable = true
-            isFocusable = false
-
-            // Sleek inner pill docked flush to the screen edge with rounded inner corners
-            val innerPill = View(context).apply {
-                val pillBg = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    cornerRadii = floatArrayOf(
-                        dp(8).toFloat(), dp(8).toFloat(), // top-left
-                        0f, 0f,                           // top-right
-                        0f, 0f,                           // bottom-right
-                        dp(8).toFloat(), dp(8).toFloat()  // bottom-left
-                    )
-                    setColor(Color.parseColor("#E60F172A"))
-                    setStroke(dp(1), Color.parseColor("#38BDF8"))
-                }
-                background = pillBg
-                elevation = dp(6).toFloat()
-                layoutParams = LinearLayout.LayoutParams(dp(6), dp(62))
-            }
-            addView(innerPill)
-        }
-
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
-        var isClick = false
-        val clickSlop = dp(16)
-
-        handleContainer.setOnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    initialY = params.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    isClick = true
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val deltaX = event.rawX - initialTouchX
-                    val deltaY = (event.rawY - initialTouchY).toInt()
-
-                    // Sliding inward (left swipe from right edge) smoothly opens the sliding menu
-                    if (deltaX < -dp(18)) {
-                        isClick = false
-                        expandCommandPanel()
-                        return@setOnTouchListener true
-                    }
-
-                    if (Math.abs(deltaY) > clickSlop) {
-                        isClick = false
-                        params.y = (initialY + deltaY).coerceIn(dp(40), screenH - dp(120))
-                        try {
-                            windowManager?.updateViewLayout(handleContainer, params)
-                        } catch (_: Exception) {}
-                    }
-                    true
-                }
-                MotionEvent.ACTION_UP -> {
-                    val deltaX = event.rawX - initialTouchX
-                    val deltaY = event.rawY - initialTouchY
-                    if (isClick && Math.abs(deltaX) <= clickSlop && Math.abs(deltaY) <= clickSlop) {
-                        expandCommandPanel()
-                    } else if (deltaX < -dp(14)) {
-                        expandCommandPanel()
-                    }
-                    true
-                }
-                else -> false
-            }
-        }
-
-        floatingBubbleView = handleContainer
-        try {
-            windowManager?.addView(handleContainer, params)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        // No-op
     }
 
     /**
@@ -448,266 +348,11 @@ class FloatingBubbleService : Service() {
         }
     }
 
+    /**
+     * Interactive floating command panel removed per user request.
+     */
     private fun setupFloatingCommandPanel() {
-        val screenWidth = resources.displayMetrics.widthPixels
-        val panelWidth = (screenWidth * 0.93).toInt()
-
-        // Start with FLAG_NOT_FOCUSABLE so underlying app keeps window focus until user taps the input box
-        val params = WindowManager.LayoutParams(
-            panelWidth,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            overlayLayoutType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.END
-            x = dp(8)
-            y = dp(52)
-        }
-        panelParams = params
-
-        val rootCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val bg = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(18).toFloat()
-                setColor(Color.parseColor("#F8FAFC"))
-                setStroke(dp(2), Color.parseColor("#3B82F6"))
-            }
-            background = bg
-            val pad = dp(14)
-            setPadding(pad, pad, pad, pad)
-            elevation = dp(12).toFloat()
-            visibility = View.GONE
-            setOnTouchListener { _, event ->
-                if (event.action == MotionEvent.ACTION_OUTSIDE) {
-                    collapseCommandPanel()
-                    true
-                } else {
-                    false
-                }
-            }
-        }
-
-        // 1. Header Row
-        val headerRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
-        val headerIcon = ImageView(this).apply {
-            setImageResource(R.mipmap.ic_launcher)
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            layoutParams = LinearLayout.LayoutParams(dp(34), dp(34)).apply {
-                marginEnd = dp(10)
-            }
-        }
-        headerRow.addView(headerIcon)
-
-        val titleCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-
-        val titleText = TextView(this).apply {
-            text = "OmniPilot Menu"
-            setTextColor(Color.parseColor("#0F172A"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            setTypeface(typeface, Typeface.BOLD)
-        }
-
-        val badgeText = TextView(this).apply {
-            text = "Target: Detecting active app..."
-            setTextColor(Color.parseColor("#475569"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            ellipsize = TextUtils.TruncateAt.END
-            maxLines = 1
-        }
-        targetAppBadge = badgeText
-
-        titleCol.addView(titleText)
-        titleCol.addView(badgeText)
-
-        val speakerBtn = createSmallButton(
-            if (isTtsVoiceEnabled) "🔊 Voice On" else "🔇 Muted",
-            if (isTtsVoiceEnabled) "#DCFCE7" else "#F1F5F9",
-            if (isTtsVoiceEnabled) "#15803D" else "#64748B"
-        ) {
-            setTtsVoiceEnabled(!isTtsVoiceEnabled)
-        }
-        speakerToggleBtn = speakerBtn
-
-        val openAppBtn = createSmallButton("↗ App", "#E2E8F0", "#1E293B") {
-            collapseCommandPanel()
-            val intent = Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            }
-            startActivity(intent)
-        }
-
-        val closeBtn = createSmallButton("✕", "#FEE2E2", "#991B1B") {
-            collapseCommandPanel()
-        }
-
-        headerRow.addView(titleCol)
-        headerRow.addView(speakerBtn)
-        headerRow.addView( View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(4), dp(1)) } )
-        headerRow.addView(openAppBtn)
-        headerRow.addView( View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(4), dp(1)) } )
-        headerRow.addView(closeBtn)
-
-        // 2. Quick Action Chips Row
-        val chipScroll = HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            setPadding(0, dp(8), 0, dp(6))
-        }
-        val chipRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-
-        chipRow.addView(createActionChip("🌐 Google Search & Write") {
-            val customTopic = promptInput?.text?.toString()?.trim().orEmpty()
-            val topic = if (customTopic.isNotEmpty()) customTopic else "Quantum Computing"
-            executeUserInstructionOverApp("Search Google for $topic and write in notes")
-        })
-        chipRow.addView(createActionChip("🔍 Check Writes & Fields") {
-            runWithUnderlyingAppFocus {
-                performNativeInspectAndVerify()
-            }
-        })
-        chipRow.addView(createActionChip("📝 Write AI Note") {
-            runWithUnderlyingAppFocus {
-                performAiNoteWriteWorkflow()
-            }
-        })
-        chipRow.addView(createActionChip("✍️ Quick Fill Form") {
-            runWithUnderlyingAppFocus {
-                performQuickFillDemo()
-            }
-        })
-        chipRow.addView(createActionChip("✅ Click Save/Submit") {
-            runWithUnderlyingAppFocus {
-                val service = AttendanceAccessibilityService.instance
-                val clicked = service?.clickElement("Save") == true ||
-                    service?.clickElement("Submit") == true ||
-                    service?.clickElement("Done") == true
-                updateStatus(
-                    if (clicked) "✅ Clicked Save/Submit button on active screen!"
-                    else "⚠️ Could not find a 'Save' or 'Submit' button on screen."
-                )
-            }
-        })
-        chipRow.addView(createActionChip("⬇️ Scroll Down") {
-            runWithUnderlyingAppFocus {
-                val ok = AttendanceAccessibilityService.instance?.scrollScreen("down") ?: false
-                updateStatus(if (ok) "⬇️ Scrolled down." else "⚠️ Could not scroll.")
-            }
-        })
-        chipRow.addView(createActionChip("◀ Back") {
-            runWithUnderlyingAppFocus {
-                AttendanceAccessibilityService.instance?.performSystemNavigation("BACK")
-                updateStatus("◀ Navigated Back.")
-            }
-        })
-
-        chipScroll.addView(chipRow)
-
-        // 3. Prompt Input Row
-        val inputRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(4), 0, dp(6))
-        }
-
-        val edit = EditText(this).apply {
-            hint = "Ask anything, search Google, or control this app..."
-            setHintTextColor(Color.parseColor("#94A3B8"))
-            setTextColor(Color.parseColor("#0F172A"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-            setSingleLine(true)
-            val editBg = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(10).toFloat()
-                setColor(Color.WHITE)
-                setStroke(dp(1), Color.parseColor("#CBD5E1"))
-            }
-            background = editBg
-            setPadding(dp(10), dp(8), dp(10), dp(8))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-
-            setOnTouchListener { v, event ->
-                if (event.action == MotionEvent.ACTION_DOWN) {
-                    enablePanelKeyboardFocus(true)
-                    v.requestFocus()
-                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                    imm.showSoftInput(v, InputMethodManager.SHOW_IMPLICIT)
-                }
-                false
-            }
-        }
-        promptInput = edit
-
-        val sendBtn = createSmallButton("Run AI", "#2563EB", "#FFFFFF") {
-            val text = edit.text?.toString()?.trim() ?: ""
-            if (text.isEmpty()) {
-                Toast.makeText(this, "Enter an instruction first", Toast.LENGTH_SHORT).show()
-            } else {
-                executeUserInstructionOverApp(text)
-            }
-        }
-
-        inputRow.addView(edit)
-        inputRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(8), dp(1)) })
-        inputRow.addView(sendBtn)
-
-        // 4. Status / Mini Chat History Feed Area
-        val statusScroll = ScrollView(this).apply {
-            val scrollBg = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(10).toFloat()
-                setColor(Color.parseColor("#0F172A"))
-            }
-            background = scrollBg
-            val pad = dp(8)
-            setPadding(pad, pad, pad, pad)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(145)
-            )
-            isVerticalScrollBarEnabled = true
-        }
-        chatScrollView = statusScroll
-
-        val chatLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-        chatContainer = chatLayout
-
-        val statusTv = TextView(this).apply {
-            text = "🤖 OmniPilot Ready. Tap chips or ask anything above..."
-            setTextColor(Color.parseColor("#94A3B8"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            setPadding(dp(4), dp(4), dp(4), dp(4))
-        }
-        panelStatusTextView = statusTv
-        chatLayout.addView(statusTv)
-        statusScroll.addView(chatLayout)
-
-        rootCard.addView(headerRow)
-        rootCard.addView(chipScroll)
-        rootCard.addView(inputRow)
-        rootCard.addView(statusScroll)
-
-        floatingPanelView = rootCard
-        try {
-            windowManager?.addView(rootCard, params)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        // No-op
     }
 
     private fun createSmallButton(
@@ -1322,16 +967,16 @@ class FloatingBubbleService : Service() {
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("OmniPilot Assistant Active")
-                .setContentText("Tap to open OmniPilot • Slide edge menu to inspect & control any app")
+                .setContentTitle("OmniPilot Copilot Active")
+                .setContentText("Tap to open OmniPilot")
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentIntent(pendingIntent)
                 .build()
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-                .setContentTitle("OmniPilot Assistant Active")
-                .setContentText("Tap to open OmniPilot • Slide edge menu to inspect & control any app")
+                .setContentTitle("OmniPilot Copilot Active")
+                .setContentText("Tap to open OmniPilot")
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentIntent(pendingIntent)
                 .build()

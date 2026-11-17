@@ -87,12 +87,15 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     final a11yStatus = await AccessibilityBridge.getAccessibilityStatus();
     final overlays = await AccessibilityBridge.canDrawOverlays();
     final bubble = await AccessibilityBridge.isFloatingBubbleRunning();
+    if (bubble) {
+      await AccessibilityBridge.stopFloatingBubble();
+    }
     if (mounted) {
       setState(() {
         _isA11yEnabled = a11yStatus['isBound'] ?? false;
         _isA11ySettingOn = a11yStatus['isSettingEnabled'] ?? false;
         _canDrawOverlays = overlays;
-        _isBubbleRunning = bubble;
+        _isBubbleRunning = false;
       });
     }
   }

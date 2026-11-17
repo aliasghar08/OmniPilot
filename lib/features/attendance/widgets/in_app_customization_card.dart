@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../services/services.dart';
 
 /// Interactive in-app control center allowing the user to customize automation speeds,
-/// typing fallback strategies, floating bubble appearance, and manage third-party target apps.
+/// typing fallback strategies, write verification, and manage third-party target apps.
 class InAppCustomizationCard extends StatefulWidget {
   final VoidCallback? onSettingsChanged;
 
@@ -272,45 +272,7 @@ class _InAppCustomizationCardState extends State<InAppCustomizationCard> {
               ),
             ),
 
-            const Divider(height: 24),
-
-            // 5. Floating Overlay Appearance
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Floating HUD Opacity',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                      ),
-                      Text(
-                        'Transparency of overlay over other apps (${(_settings.overlayOpacity * 100).round()}%)',
-                        style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${(_settings.overlayOpacity * 100).round()}%',
-                  style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary),
-                ),
-              ],
-            ),
-            Slider(
-              value: _settings.overlayOpacity,
-              min: 0.6,
-              max: 1.0,
-              divisions: 8,
-              onChanged: (val) async {
-                await _settings.setOverlayOpacity(val);
-              },
-            ),
-
-            const SizedBox(height: 10),
+            const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [

@@ -3,14 +3,14 @@ import '../../../core/core.dart';
 import '../../../services/services.dart';
 import 'permission_status_tile.dart';
 
-/// Card for controlling Android Accessibility Service, Floating AI Overlay, and external app inspection.
+/// Card for controlling Android Accessibility Service, system permissions, and external app inspection.
 class CrossAppControllerCard extends StatelessWidget {
   final String activeExternalPackage;
   final bool isA11yEnabled;
   final bool isA11ySettingOn;
   final bool canDrawOverlays;
   final bool isBubbleRunning;
-  final VoidCallback onToggleBubble;
+  final VoidCallback? onToggleBubble;
   final ValueChanged<bool> onInspectScreen;
   final VoidCallback onRequestOverlay;
   final VoidCallback onOpenAppInfo;
@@ -22,8 +22,8 @@ class CrossAppControllerCard extends StatelessWidget {
     required this.isA11yEnabled,
     this.isA11ySettingOn = false,
     required this.canDrawOverlays,
-    required this.isBubbleRunning,
-    required this.onToggleBubble,
+    this.isBubbleRunning = false,
+    this.onToggleBubble,
     required this.onInspectScreen,
     required this.onRequestOverlay,
     required this.onOpenAppInfo,
@@ -128,8 +128,8 @@ class CrossAppControllerCard extends StatelessWidget {
               iconColor: canDrawOverlays ? Colors.green : (isDark ? Colors.amber.shade400 : Colors.amber.shade800),
               title: 'Display Over Other Apps (Overlay)',
               subtitle: canDrawOverlays
-                  ? 'Granted • Assistant bubble authorized to show on top of any app'
-                  : 'Required for floating assistant. Tap to authorize in Android settings',
+                  ? 'Granted • App permissions & choice dialogs authorized over third-party apps'
+                  : 'Allows permission pop-ups & choice dialogs. Tap to authorize in Android settings',
               trailing: canDrawOverlays
                   ? Chip(
                       label: Text(
@@ -147,21 +147,6 @@ class CrossAppControllerCard extends StatelessWidget {
                       onPressed: onRequestOverlay,
                       child: const Text('Grant'),
                     ),
-            ),
-            const Divider(height: 16),
-
-            // 3. Sliding AI Edge Assistant Tile
-            PermissionStatusTile(
-              icon: isBubbleRunning ? Icons.view_sidebar_rounded : Icons.radio_button_unchecked,
-              iconColor: isBubbleRunning ? Colors.blue : Colors.grey,
-              title: 'Sliding AI Edge Assistant',
-              subtitle: isBubbleRunning
-                  ? 'Active on edge • Slide edge handle to open AI menu (no overlay icon)'
-                  : 'Sliding edge menu to inspect & control without leaving other apps',
-              trailing: Switch(
-                value: isBubbleRunning,
-                onChanged: (_) => onToggleBubble(),
-              ),
             ),
 
             // 4. Voice Replies (TTS) Tile

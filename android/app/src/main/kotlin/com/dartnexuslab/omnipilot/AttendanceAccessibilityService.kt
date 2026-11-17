@@ -114,29 +114,6 @@ class AttendanceAccessibilityService : AccessibilityService() {
             }
         }
 
-        // If overlay permission is already granted, launch the floating assistant bubble
-        mainHandler.post {
-            try {
-                val hasOverlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    Settings.canDrawOverlays(this)
-                } else {
-                    true
-                }
-                if (hasOverlay && !FloatingBubbleService.isRunning) {
-                    val intent = Intent(this, FloatingBubbleService::class.java)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        startForegroundService(intent)
-                    } else {
-                        startService(intent)
-                    }
-                    Log.d(TAG, "Auto-started FloatingBubbleService on Accessibility connect")
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Floating bubble launch deferred: ${e.message}")
-            }
-        }
-    }
-
     /**
      * Responds immediately when the user taps the Android system accessibility button
      * or triggers the Accessibility Shortcut.
@@ -144,32 +121,10 @@ class AttendanceAccessibilityService : AccessibilityService() {
     fun handleAccessibilityShortcutTriggered() {
         mainHandler.post {
             try {
-                val hasOverlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    Settings.canDrawOverlays(this)
-                } else {
-                    true
+                val intent = Intent(this, MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 }
-
-                if (hasOverlay) {
-                    val bubbleInstance = FloatingBubbleService.currentInstance
-                    if (FloatingBubbleService.isRunning && bubbleInstance != null) {
-                        bubbleInstance.toggleCommandPanel()
-                    } else {
-                        val intent = Intent(this, FloatingBubbleService::class.java).apply {
-                            action = FloatingBubbleService.ACTION_SHOW_PANEL
-                        }
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            startForegroundService(intent)
-                        } else {
-                            startService(intent)
-                        }
-                    }
-                } else {
-                    val intent = Intent(this, MainActivity::class.java).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                    }
-                    startActivity(intent)
-                }
+                startActivity(intent)
             } catch (e: Exception) {
                 Log.e(TAG, "Error handling accessibility shortcut trigger: ${e.message}", e)
             }

@@ -51,7 +51,7 @@ class DiscoveredFieldsCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12.0),
                 child: Text(
-                  'No external fields inspected yet. Open another app and tap the Floating Bubble, or tap "Switch & Inspect External App" above.',
+                  'No external fields inspected yet. Tap "Switch & Inspect External App" above, or ask OmniPilot in the AI Assistant chat console.',
                   style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13),
                 ),
               )

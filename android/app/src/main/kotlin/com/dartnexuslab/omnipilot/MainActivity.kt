@@ -40,19 +40,6 @@ class MainActivity : FlutterActivity() {
                 )
             } catch (_: Exception) {}
         }
-
-        // When user returns to OmniPilot after granting permissions, auto-launch the assistant overlay if authorized
-        try {
-            val canOverlay = SystemPermissionHelper.hasOverlayPermission(this)
-            if (AttendanceAccessibilityService.isRunning && canOverlay && !FloatingBubbleService.isRunning) {
-                val intent = Intent(this, FloatingBubbleService::class.java)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(intent)
-                } else {
-                    startService(intent)
-                }
-            }
-        } catch (_: Exception) {}
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
