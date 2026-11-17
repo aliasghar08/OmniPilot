@@ -113,6 +113,7 @@ class AttendanceAccessibilityService : AccessibilityService() {
                 Log.w(TAG, "Failed to register AccessibilityButtonCallback: ${e.message}")
             }
         }
+    }
 
     /**
      * Responds immediately when the user taps the Android system accessibility button
