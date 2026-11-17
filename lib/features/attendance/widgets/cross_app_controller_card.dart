@@ -151,6 +151,50 @@ class CrossAppControllerCard extends StatelessWidget {
                 onChanged: (_) => onToggleBubble(),
               ),
             ),
+
+            // 4. Voice Replies (TTS) Tile
+            AnimatedBuilder(
+              animation: AppSettingsService.instance,
+              builder: (context, _) {
+                final ttsEnabled = AppSettingsService.instance.ttsVoiceEnabled;
+                return Column(
+                  children: [
+                    const Divider(height: 16),
+                    PermissionStatusTile(
+                      icon: ttsEnabled ? Icons.record_voice_over : Icons.voice_over_off,
+                      iconColor: ttsEnabled ? Colors.purple : Colors.grey,
+                      title: 'Voice Replies (Text-to-Speech)',
+                      subtitle: ttsEnabled
+                          ? 'Active • OmniPilot reads status & replies out loud'
+                          : 'Muted • Spoken voice feedback is disabled',
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (ttsEnabled)
+                            TextButton.icon(
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: () async {
+                                await AccessibilityBridge.speakTts('OmniPilot voice replies are active.');
+                              },
+                              icon: const Icon(Icons.volume_up, size: 16),
+                              label: const Text('Test Voice', style: TextStyle(fontSize: 12)),
+                            ),
+                          Switch(
+                            value: ttsEnabled,
+                            onChanged: (val) async {
+                              await AppSettingsService.instance.setTtsVoiceEnabled(val);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
             const SizedBox(height: 14),
 
             // OEM / Infinix Helper Row

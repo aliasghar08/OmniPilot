@@ -104,6 +104,19 @@ class _AttendanceScreenState extends State<AttendanceScreen>
       },
     );
 
+    AccessibilityBridge.onBotFeedbackReceived = (String feedback) {
+      if (!mounted || feedback.isEmpty) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(feedback),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+    };
+
     _messages.add(
       ChatMessageModel(
         sender: 'assistant',
@@ -308,14 +321,20 @@ class _AttendanceScreenState extends State<AttendanceScreen>
 
     _scrollToBottom();
 
-    final reply = await _assistant.handleUserMessage(text);
-
-    setState(() {
-      _messages.add(ChatMessageModel(sender: 'assistant', text: reply));
-      _isProcessing = false;
-    });
-
-    _scrollToBottom();
+    String reply = '✅ Command processed.';
+    try {
+      reply = await _assistant.handleUserMessage(text);
+    } catch (_) {
+      reply = '❌ Bot Error: Something went wrong.';
+    } finally {
+      if (mounted) {
+        setState(() {
+          _messages.add(ChatMessageModel(sender: 'assistant', text: reply));
+          _isProcessing = false;
+        });
+        _scrollToBottom();
+      }
+    }
   }
 
   void _scrollToBottom() {

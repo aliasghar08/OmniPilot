@@ -54,7 +54,8 @@ class AssistantController {
           '4. CHECKING EXISTING WRITES: Use "checkExistingWrites" whenever asked to read, verify, or check what is currently written in form fields.\n'
           '5. WRITING & FILLING EXTERNAL FORMS/NOTES: Use "fillExternalAppFields" or "writeNoteInExternalApp" to populate external apps and verify every write.\n'
           '6. FULL UI CONTROL: Use "clickExternalAppElement", "toggleExternalCheckable", "scrollExternalAppScreen", "navigateAndroidSystem", and "openExternalAndroidApp".\n'
-          '7. FIRESTORE SYNC: Use "saveAttendanceRecord" to log period attendance records to Cloud Firestore.',
+          '7. FIRESTORE SYNC: Use "saveAttendanceRecord" to log period attendance records to Cloud Firestore.\n'
+          '8. CONVERSATIONAL BOT PERSONA & VOICE REPLIES: When responding, always phrase replies in a friendly, conversational, and concise tone (e.g. "I\'ve opened Contacts and filled in Ali Asghar\'s details for you!", "I\'ve scrolled down the screen for you."). For general knowledge questions, provide a clear, concise answer suitable for Text-to-Speech speech synthesis.',
         ),
       );
 
@@ -70,15 +71,17 @@ class AssistantController {
   /// If the AI service is unreachable or encounters an error, automatically falls back to
   /// deterministic on-device execution so commands always succeed.
   Future<String> handleUserMessage(String message, {bool fromOverlay = false}) async {
-    if (_chatSession == null) {
-      return await _executeResilientLocalFallback(
-        message,
-        errorNote: 'Offline mode active',
-        fromOverlay: fromOverlay,
-      );
-    }
-
+    String reply = '✅ Command processed.';
     try {
+      if (_chatSession == null) {
+        reply = await _executeResilientLocalFallback(
+          message,
+          errorNote: 'Offline mode active',
+          fromOverlay: fromOverlay,
+        );
+        return reply;
+      }
+
       GenerateContentResponse response = await _chatSession!.sendMessage(
         Content.text(message),
       );
@@ -100,13 +103,28 @@ class AssistantController {
         );
       }
 
-      return response.text ?? 'Action completed.';
+      final text = response.text?.trim();
+      reply = (text != null && text.isNotEmpty)
+          ? text
+          : (AccessibilityBridge.lastBotFeedback.isNotEmpty
+              ? AccessibilityBridge.lastBotFeedback
+              : '✅ Done: Action completed.');
+      return reply;
     } catch (e) {
-      return await _executeResilientLocalFallback(
-        message,
-        errorNote: e.toString(),
-        fromOverlay: fromOverlay,
-      );
+      try {
+        reply = await _executeResilientLocalFallback(
+          message,
+          errorNote: e.toString(),
+          fromOverlay: fromOverlay,
+        );
+      } catch (_) {
+        reply = '❌ Bot Error: Something went wrong.';
+      }
+      return reply;
+    } finally {
+      if (reply.trim().isEmpty) {
+        reply = '✅ Command processed.';
+      }
     }
   }
 
@@ -615,7 +633,9 @@ class AssistantController {
     if (lower.startsWith('open ') || lower.startsWith('launch ')) {
       final appName = message.split(' ').sublist(1).join(' ').trim();
       final ok = await AccessibilityBridge.launchExternalApp(appName);
-      return ok ? '🚀 Launched "$appName"!' : '⚠️ Could not find app "$appName".';
+      return ok
+          ? '✅ Done: Launched "$appName".'
+          : '⚠️ Bot Alert: Could not find app "$appName".';
     }
 
     // 5. Complex Period Attendance Form AI Autofill

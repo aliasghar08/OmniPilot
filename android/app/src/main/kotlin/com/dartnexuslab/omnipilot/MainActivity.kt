@@ -12,9 +12,19 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
 
-    private val CHANNEL = "com.dartnexuslab.omnipilot/accessibility"
-    private var methodChannel: MethodChannel? = null
+    companion object {
+        private const val CHANNEL = "com.dartnexuslab.omnipilot/accessibility"
+
+        @Volatile
+        var methodChannel: MethodChannel? = null
+    }
+
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    override fun onDestroy() {
+        super.onDestroy()
+        methodChannel = null
+    }
 
     override fun onResume() {
         super.onResume()
@@ -151,14 +161,38 @@ class MainActivity : FlutterActivity() {
                         result.success(launched)
                     }
 
+                    "executeCommand" -> {
+                        val command = call.argument<String>("command")?.trim() ?: ""
+                        val service = AttendanceAccessibilityService.instance
+                        if (service == null) {
+                            val errMsg = "⚠️ Bot Error: Accessibility service is disabled."
+                            FloatingBubbleService.updateStatusBubble(errMsg)
+                            methodChannel?.invokeMethod("onBotFeedback", errMsg)
+                            result.success(errMsg)
+                        } else {
+                            Thread {
+                                var feedback = "✅ Command processed."
+                                try {
+                                    feedback = service.executeBotCommand(command)
+                                } catch (e: Exception) {
+                                    feedback = "❌ Bot Failed: ${e.localizedMessage?.take(40) ?: "Unknown error"}"
+                                    FloatingBubbleService.updateStatusBubble(feedback)
+                                    mainHandler.post {
+                                        methodChannel?.invokeMethod("onBotFeedback", feedback)
+                                    }
+                                } finally {
+                                    mainHandler.post {
+                                        result.success(feedback)
+                                    }
+                                }
+                            }.start()
+                        }
+                    }
+
                     "inspectActiveWindow" -> {
                         val service = AttendanceAccessibilityService.instance
                         if (service == null) {
-                            result.error(
-                                "SERVICE_DISABLED",
-                                "Accessibility service is not enabled. Please enable it in Settings.",
-                                null
-                            )
+                            notifyServiceDisabled("Accessibility service is not enabled. Please enable it in Settings.", result)
                         } else {
                             val fields = service.inspectActiveWindow()
                             result.success(fields)
@@ -168,7 +202,7 @@ class MainActivity : FlutterActivity() {
                     "getScreenSnapshot" -> {
                         val service = AttendanceAccessibilityService.instance
                         if (service == null) {
-                            result.error("SERVICE_DISABLED", "Accessibility service is disabled.", null)
+                            notifyServiceDisabled("Accessibility service is disabled.", result)
                         } else {
                             val preferExternal = call.argument<Boolean>("preferExternal") ?: true
                             val switchToExternal = call.argument<Boolean>("switchToExternal") ?: false
@@ -188,7 +222,7 @@ class MainActivity : FlutterActivity() {
                     "checkExistingWrites" -> {
                         val service = AttendanceAccessibilityService.instance
                         if (service == null) {
-                            result.error("SERVICE_DISABLED", "Accessibility service is disabled.", null)
+                            notifyServiceDisabled("Accessibility service is disabled.", result)
                         } else {
                             @Suppress("UNCHECKED_CAST")
                             val targets = call.argument<List<String>>("targets")
@@ -209,11 +243,7 @@ class MainActivity : FlutterActivity() {
                     "fillExternalFields" -> {
                         val service = AttendanceAccessibilityService.instance
                         if (service == null) {
-                            result.error(
-                                "SERVICE_DISABLED",
-                                "Accessibility service is not enabled. Please enable it in Settings.",
-                                null
-                            )
+                            notifyServiceDisabled("Accessibility service is not enabled. Please enable it in Settings.", result)
                         } else {
                             @Suppress("UNCHECKED_CAST")
                             val fieldMap = call.argument<Map<String, String>>("fields") ?: emptyMap()
@@ -225,7 +255,7 @@ class MainActivity : FlutterActivity() {
                     "writeFieldsWithVerification" -> {
                         val service = AttendanceAccessibilityService.instance
                         if (service == null) {
-                            result.error("SERVICE_DISABLED", "Accessibility service is disabled.", null)
+                            notifyServiceDisabled("Accessibility service is disabled.", result)
                         } else {
                             @Suppress("UNCHECKED_CAST")
                             val fieldMap = call.argument<Map<String, String>>("fields") ?: emptyMap()
@@ -247,7 +277,7 @@ class MainActivity : FlutterActivity() {
                     "clickElement" -> {
                         val service = AttendanceAccessibilityService.instance
                         if (service == null) {
-                            result.error("SERVICE_DISABLED", "Accessibility service is disabled.", null)
+                            notifyServiceDisabled("Accessibility service is disabled.", result)
                         } else {
                             val target = call.argument<String>("target") ?: ""
                             val clicked = service.clickElement(target)
@@ -258,7 +288,7 @@ class MainActivity : FlutterActivity() {
                     "longClickElement" -> {
                         val service = AttendanceAccessibilityService.instance
                         if (service == null) {
-                            result.error("SERVICE_DISABLED", "Accessibility service is disabled.", null)
+                            notifyServiceDisabled("Accessibility service is disabled.", result)
                         } else {
                             val target = call.argument<String>("target") ?: ""
                             val clicked = service.longClickElement(target)
@@ -269,7 +299,7 @@ class MainActivity : FlutterActivity() {
                     "setCheckableState" -> {
                         val service = AttendanceAccessibilityService.instance
                         if (service == null) {
-                            result.error("SERVICE_DISABLED", "Accessibility service is disabled.", null)
+                            notifyServiceDisabled("Accessibility service is disabled.", result)
                         } else {
                             val target = call.argument<String>("target") ?: ""
                             val checked = call.argument<Boolean>("checked") ?: true
@@ -281,7 +311,7 @@ class MainActivity : FlutterActivity() {
                     "scrollScreen" -> {
                         val service = AttendanceAccessibilityService.instance
                         if (service == null) {
-                            result.error("SERVICE_DISABLED", "Accessibility service is disabled.", null)
+                            notifyServiceDisabled("Accessibility service is disabled.", result)
                         } else {
                             val direction = call.argument<String>("direction") ?: "down"
                             val scrolled = service.scrollScreen(direction)
@@ -292,7 +322,7 @@ class MainActivity : FlutterActivity() {
                     "tapCoordinates" -> {
                         val service = AttendanceAccessibilityService.instance
                         if (service == null) {
-                            result.error("SERVICE_DISABLED", "Accessibility service is disabled.", null)
+                            notifyServiceDisabled("Accessibility service is disabled.", result)
                         } else {
                             val x = (call.argument<Number>("x")?.toFloat()) ?: 0f
                             val y = (call.argument<Number>("y")?.toFloat()) ?: 0f
@@ -304,7 +334,7 @@ class MainActivity : FlutterActivity() {
                     "swipeCoordinates" -> {
                         val service = AttendanceAccessibilityService.instance
                         if (service == null) {
-                            result.error("SERVICE_DISABLED", "Accessibility service is disabled.", null)
+                            notifyServiceDisabled("Accessibility service is disabled.", result)
                         } else {
                             val startX = (call.argument<Number>("startX")?.toFloat()) ?: 0f
                             val startY = (call.argument<Number>("startY")?.toFloat()) ?: 0f
@@ -319,7 +349,7 @@ class MainActivity : FlutterActivity() {
                     "performSystemNavigation" -> {
                         val service = AttendanceAccessibilityService.instance
                         if (service == null) {
-                            result.error("SERVICE_DISABLED", "Accessibility service is disabled.", null)
+                            notifyServiceDisabled("Accessibility service is disabled.", result)
                         } else {
                             val action = call.argument<String>("action") ?: "BACK"
                             val ok = service.performSystemNavigation(action)
@@ -330,7 +360,7 @@ class MainActivity : FlutterActivity() {
                     "ensureExternalAppFocused" -> {
                         val service = AttendanceAccessibilityService.instance
                         if (service == null) {
-                            result.error("SERVICE_DISABLED", "Accessibility service is disabled.", null)
+                            notifyServiceDisabled("Accessibility service is disabled.", result)
                         } else {
                             Thread {
                                 val ok = service.ensureExternalAppFocused()
@@ -345,7 +375,7 @@ class MainActivity : FlutterActivity() {
                             val query = call.argument<String>("query")
                             result.success(service.getInstalledApps(query))
                         } else {
-                            result.error("SERVICE_DISABLED", "Accessibility service is disabled.", null)
+                            notifyServiceDisabled("Accessibility service is disabled.", result)
                         }
                     }
 
@@ -354,13 +384,8 @@ class MainActivity : FlutterActivity() {
                         val appNameOrPackage = call.argument<String>("app") ?: ""
                         if (service != null) {
                             Thread {
-                                val launched = service.launchAppByPackageOrName(appNameOrPackage)
-                                if (launched) {
-                                    try {
-                                        Thread.sleep(750)
-                                    } catch (_: InterruptedException) {}
-                                }
-                                mainHandler.post { result.success(launched) }
+                                service.launchOrResolveApp(appNameOrPackage, this@MainActivity)
+                                mainHandler.post { result.success(true) }
                             }.start()
                         } else {
                             val lower = appNameOrPackage.lowercase().trim()
@@ -383,14 +408,23 @@ class MainActivity : FlutterActivity() {
                                 } catch (_: Exception) {}
                             }
                             if (defaultLaunched) {
+                                val msg = "✅ Done: Opened $appNameOrPackage."
+                                FloatingBubbleService.updateStatusBubble(msg)
+                                methodChannel?.invokeMethod("onBotFeedback", msg)
                                 result.success(true)
                             } else {
                                 val launchIntent = packageManager.getLaunchIntentForPackage(appNameOrPackage)
                                 if (launchIntent != null) {
                                     launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                     startActivity(launchIntent)
+                                    val msg = "✅ Done: Opened $appNameOrPackage."
+                                    FloatingBubbleService.updateStatusBubble(msg)
+                                    methodChannel?.invokeMethod("onBotFeedback", msg)
                                     result.success(true)
                                 } else {
+                                    val msg = "⚠️ Bot Alert: App '$appNameOrPackage' not found."
+                                    FloatingBubbleService.updateStatusBubble(msg)
+                                    methodChannel?.invokeMethod("onBotFeedback", msg)
                                     result.success(false)
                                 }
                             }
@@ -419,6 +453,22 @@ class MainActivity : FlutterActivity() {
 
                     "isFloatingBubbleRunning" -> {
                         result.success(FloatingBubbleService.isRunning)
+                    }
+
+                    "setTtsEnabled" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: true
+                        FloatingBubbleService.setTtsVoiceEnabled(enabled)
+                        result.success(true)
+                    }
+
+                    "isTtsEnabled" -> {
+                        result.success(FloatingBubbleService.isTtsVoiceEnabled)
+                    }
+
+                    "speakTts" -> {
+                        val text = call.argument<String>("text") ?: ""
+                        FloatingBubbleService.speakText(text)
+                        result.success(true)
                     }
 
                     "openGoogleSearchInBrowser" -> {
@@ -450,23 +500,36 @@ class MainActivity : FlutterActivity() {
                         mapOf("prompt" to prompt),
                         object : MethodChannel.Result {
                             override fun success(result: Any?) {
-                                callback(result?.toString() ?: "Action completed.")
+                                val msg = result?.toString()?.takeIf { it.isNotBlank() } ?: "✅ Command processed."
+                                callback(msg)
                             }
 
                             override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {
-                                callback("Error: ${errorMessage ?: errorCode}")
+                                val msg = "⚠️ Bot Error: ${errorMessage ?: errorCode}"
+                                callback(msg)
                             }
 
                             override fun notImplemented() {
-                                callback("Flutter handler not registered.")
+                                callback("⚠️ Bot Error: Flutter handler not registered.")
                             }
                         }
                     )
                 } else {
-                    callback("Assistant engine not ready.")
+                    callback("⚠️ Bot Error: Assistant engine not ready.")
                 }
             }
         }
+    }
+
+    private fun notifyServiceDisabled(message: String, result: MethodChannel.Result) {
+        val feedback = "⚠️ Bot Error: $message"
+        FloatingBubbleService.updateStatusBubble(feedback)
+        mainHandler.post {
+            try {
+                methodChannel?.invokeMethod("onBotFeedback", feedback)
+            } catch (_: Exception) {}
+        }
+        result.error("SERVICE_DISABLED", message, null)
     }
 
     private fun openOemAutoStartSettings(): Boolean {

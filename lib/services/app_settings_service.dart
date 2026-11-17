@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'accessibility_bridge.dart';
 
 /// Represents a customizable third-party app shortcut for cross-app automation.
 class AppShortcutItem {
@@ -44,6 +45,7 @@ class AppSettingsService extends ChangeNotifier {
   static const String _keyOverlayOpacity = 'omni_overlay_opacity';
   static const String _keyBubbleSize = 'omni_bubble_size';
   static const String _keyShortcuts = 'omni_custom_shortcuts';
+  static const String _keyTtsVoice = 'flutter.tts_voice_enabled';
 
   int _inputDelayMs = 150;
   bool _autoSwitchToExternal = true;
@@ -51,6 +53,7 @@ class AppSettingsService extends ChangeNotifier {
   String _typingStrategy = 'smart_auto'; // 'smart_auto', 'action_only', 'clipboard'
   double _overlayOpacity = 0.95;
   String _bubbleSize = 'medium'; // 'small', 'medium', 'large'
+  bool _ttsVoiceEnabled = true;
   List<AppShortcutItem> _shortcuts = [];
 
   int get inputDelayMs => _inputDelayMs;
@@ -59,6 +62,7 @@ class AppSettingsService extends ChangeNotifier {
   String get typingStrategy => _typingStrategy;
   double get overlayOpacity => _overlayOpacity;
   String get bubbleSize => _bubbleSize;
+  bool get ttsVoiceEnabled => _ttsVoiceEnabled;
   List<AppShortcutItem> get shortcuts => List.unmodifiable(_shortcuts);
 
   bool _isInitialized = false;
@@ -74,6 +78,10 @@ class AppSettingsService extends ChangeNotifier {
       _typingStrategy = prefs.getString(_keyTypingStrategy) ?? 'smart_auto';
       _overlayOpacity = prefs.getDouble(_keyOverlayOpacity) ?? 0.95;
       _bubbleSize = prefs.getString(_keyBubbleSize) ?? 'medium';
+      _ttsVoiceEnabled = prefs.getBool(_keyTtsVoice) ?? prefs.getBool('omni_tts_voice_enabled') ?? true;
+      try {
+        await AccessibilityBridge.setTtsEnabled(_ttsVoiceEnabled);
+      } catch (_) {}
 
       final rawList = prefs.getStringList(_keyShortcuts);
       if (rawList != null && rawList.isNotEmpty) {
@@ -171,6 +179,17 @@ class AppSettingsService extends ChangeNotifier {
     await prefs.setString(_keyBubbleSize, value);
   }
 
+  Future<void> setTtsVoiceEnabled(bool value) async {
+    _ttsVoiceEnabled = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyTtsVoice, value);
+    await prefs.setBool('omni_tts_voice_enabled', value);
+    try {
+      await AccessibilityBridge.setTtsEnabled(value);
+    } catch (_) {}
+  }
+
   Future<void> addShortcut(String name, String packageOrQuery) async {
     final newItem = AppShortcutItem(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -196,6 +215,10 @@ class AppSettingsService extends ChangeNotifier {
     _typingStrategy = 'smart_auto';
     _overlayOpacity = 0.95;
     _bubbleSize = 'medium';
+    _ttsVoiceEnabled = true;
+    try {
+      await AccessibilityBridge.setTtsEnabled(true);
+    } catch (_) {}
     _shortcuts = [
       const AppShortcutItem(
         id: 'contacts',

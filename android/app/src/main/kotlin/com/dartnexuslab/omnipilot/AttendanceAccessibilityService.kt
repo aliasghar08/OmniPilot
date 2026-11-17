@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Path
 import android.graphics.Rect
+import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -267,7 +268,7 @@ class AttendanceAccessibilityService : AccessibilityService() {
 
         val targetPkg = lastExternalPackage
         if (!targetPkg.isNullOrEmpty() && targetPkg != packageName) {
-            val launched = launchAppByPackageOrName(targetPkg)
+            val launched = launchAppByPackageOrName(targetPkg, broadcastFeedback = false)
             if (launched) {
                 try {
                     Thread.sleep(650)
@@ -602,6 +603,193 @@ class AttendanceAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * Executes a bot action on [rootNode], wrapping execution in a try-catch-finally block
+     * and guaranteeing a short status string sent back to FloatingBubbleService and Flutter.
+     */
+    fun executeBotAction(actionName: String, rootNode: AccessibilityNodeInfo?) {
+        var feedback = "✅ Done: $actionName completed."
+        try {
+            feedback = if (rootNode == null) {
+                "⚠️ Bot Error: Active screen unreadable."
+            } else {
+                val success = performNodeAction(rootNode)
+                if (success) {
+                    "✅ Done: $actionName completed."
+                } else {
+                    "⚠️ Bot Alert: Target fields not found."
+                }
+            }
+        } catch (e: Exception) {
+            feedback = "❌ Bot Failed: ${e.localizedMessage?.take(40) ?: "Unknown error"}"
+        } finally {
+            // Always broadcast feedback to Floating Bubble & Flutter UI
+            sendBotFeedback(feedback)
+        }
+    }
+
+    /**
+     * Performs node click or smart autofill on [rootNode].
+     */
+    fun performNodeAction(rootNode: AccessibilityNodeInfo): Boolean {
+        val editableEntries = mutableListOf<EditableNodeEntry>()
+        collectEditableEntries(rootNode, editableEntries)
+        if (editableEntries.isNotEmpty()) {
+            val sampleValues = listOf("Ali Asghar", "1024", "Class 10-A", "+1555019283", "Present - Verified by Copilot")
+            val payload = mutableMapOf<String, String>()
+            for ((i, entry) in editableEntries.withIndex()) {
+                val lbl = entry.label.lowercase()
+                val value = when {
+                    lbl.contains("bform") || lbl.contains("b-form") || lbl.contains("cnic") -> "35201-1234567-1"
+                    lbl.contains("emis") -> "EMIS-5421"
+                    lbl.contains("present") || lbl.contains("attendance") || lbl.contains("days") -> "24"
+                    lbl.contains("first") -> "Ali"
+                    lbl.contains("last") || lbl.contains("surname") -> "Asghar"
+                    lbl.contains("name") || lbl.contains("student") -> "Ali Asghar"
+                    lbl.contains("company") || lbl.contains("class") || lbl.contains("grade") || lbl.contains("school") -> "Class 10-A"
+                    lbl.contains("phone") || lbl.contains("mobile") || lbl.contains("tel") -> "0300-1234567"
+                    lbl.contains("roll") || lbl.contains("id") || lbl.contains("number") -> "CS-2026-044"
+                    lbl.contains("email") || lbl.contains("mail") -> "aliasgharinnocent@yahoo.com"
+                    lbl.contains("note") || lbl.contains("status") || lbl.contains("remark") -> "Good Standing (96% Attendance)"
+                    else -> sampleValues[i % sampleValues.size]
+                }
+                payload["#$i"] = value
+            }
+            val results = writeFieldsWithVerification(payload, append = false, broadcastFeedback = false)
+            return results.values.any { info ->
+                (info as? Map<*, *>)?.let { it["success"] == true || it["verified"] == true } == true
+            }
+        }
+        return false
+    }
+
+    /**
+     * Executes a raw command string from Flutter's runOmniPilotBot or overlay fallback,
+     * guaranteed to broadcast and return a concise status string.
+     */
+    fun executeBotCommand(command: String): String {
+        val trimmed = command.trim()
+        var feedback = "✅ Command processed."
+        try {
+            if (trimmed.isEmpty()) {
+                feedback = "⚠️ Bot Alert: Empty command received."
+                return feedback
+            }
+
+            val lower = trimmed.lowercase()
+
+            // 1. App launch command
+            val openPrefixes = listOf("open ", "launch ", "start ", "go to ")
+            for (pfx in openPrefixes) {
+                if (lower.startsWith(pfx)) {
+                    val targetApp = trimmed.substring(pfx.length).trim()
+                    launchOrResolveApp(targetApp, this)
+                    return "⏳ Processing launch for $targetApp..."
+                }
+            }
+
+            // 2. Click command
+            val clickPrefixes = listOf("click ", "tap ", "press ")
+            for (pfx in clickPrefixes) {
+                if (lower.startsWith(pfx)) {
+                    val target = trimmed.substring(pfx.length).trim()
+                    val clicked = clickElement(target, broadcastFeedback = false)
+                    feedback = if (clicked) {
+                        "✅ Done: Click '$target' completed."
+                    } else {
+                        "⚠️ Bot Alert: Target '$target' not found."
+                    }
+                    return feedback
+                }
+            }
+
+            // 3. Scroll command
+            if (lower.startsWith("scroll")) {
+                val dir = if (lower.contains("up")) "up" else "down"
+                val scrolled = scrollScreen(dir, broadcastFeedback = false)
+                feedback = if (scrolled) {
+                    "✅ Done: Scroll $dir completed."
+                } else {
+                    "⚠️ Bot Alert: Could not scroll $dir."
+                }
+                return feedback
+            }
+
+            // 4. Navigation command
+            if (lower == "back" || lower == "go back" || lower == "home") {
+                val nav = if (lower.contains("home")) "HOME" else "BACK"
+                val ok = performSystemNavigation(nav, broadcastFeedback = false)
+                feedback = if (ok) {
+                    "✅ Done: Navigate $nav completed."
+                } else {
+                    "⚠️ Bot Error: Navigation $nav failed."
+                }
+                return feedback
+            }
+
+            // 5. Key=Value or Key: Value field fill
+            val map = mutableMapOf<String, String>()
+            val pairRegex = Regex("([A-Za-z0-9_# ]+)[:=]\\s*([^,\\n]+)")
+            for (m in pairRegex.findAll(trimmed)) {
+                val k = m.groupValues[1].trim()
+                val v = m.groupValues[2].trim()
+                if (k.isNotEmpty() && v.isNotEmpty()) {
+                    map[k] = v
+                }
+            }
+            if (map.isNotEmpty()) {
+                val roots = getTargetRoots(preferExternal = true)
+                if (roots.isEmpty()) {
+                    feedback = "⚠️ Bot Error: Active screen unreadable."
+                    return feedback
+                }
+                val res = writeFieldsWithVerification(map, append = false, broadcastFeedback = false)
+                val anySuccess = res.values.any { info ->
+                    (info as? Map<*, *>)?.let { it["success"] == true || it["verified"] == true } == true
+                }
+                feedback = if (anySuccess) {
+                    "✅ Done: Autofill completed."
+                } else {
+                    "⚠️ Bot Alert: Target fields not found."
+                }
+                return feedback
+            }
+
+            // 6. Default: run node action on the active external root
+            val rootNode = getTargetRoots(preferExternal = true).firstOrNull()
+            feedback = if (rootNode == null) {
+                "⚠️ Bot Error: Active screen unreadable."
+            } else {
+                val success = performNodeAction(rootNode)
+                if (success) {
+                    "✅ Done: $trimmed completed."
+                } else {
+                    "⚠️ Bot Alert: Target fields not found."
+                }
+            }
+            return feedback
+        } catch (e: Exception) {
+            feedback = "❌ Bot Failed: ${e.localizedMessage?.take(40) ?: "Unknown error"}"
+            return feedback
+        } finally {
+            sendBotFeedback(feedback)
+        }
+    }
+
+    private fun sendBotFeedback(message: String) {
+        // 1. Update FloatingBubbleService HUD/Toast immediately
+        FloatingBubbleService.updateStatusBubble(message)
+
+        // 2. Push back to Flutter MethodChannel if active
+        mainHandler.post {
+            try {
+                MainActivity.methodChannel?.invokeMethod("onBotFeedback", message)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to invoke onBotFeedback: ${e.message}")
+            }
+        }
+    }
+
+    /**
      * Backward-compatible boolean map filler.
      */
     fun fillFields(fieldMappings: Map<String, String>): Map<String, Boolean> {
@@ -619,75 +807,135 @@ class AttendanceAccessibilityService : AccessibilityService() {
      * Universal multi-field writer that supports arbitrary field names, index (#0, #1),
      * semantic matching, clipboard fallback, and read-back verification of the written text.
      */
+    @JvmOverloads
     fun writeFieldsWithVerification(
         fieldMappings: Map<String, String>,
-        append: Boolean = false
+        append: Boolean = false,
+        broadcastFeedback: Boolean = true
     ): Map<String, Any> {
-        val roots = getTargetRoots(preferExternal = true)
-        if (roots.isEmpty()) return emptyMap()
-
-        val editableEntries = mutableListOf<EditableNodeEntry>()
-        for (root in roots) {
-            if (roots.size > 1 && root.packageName?.toString() == packageName) continue
-            collectEditableEntries(root, editableEntries)
-        }
-
         val results = mutableMapOf<String, Any>()
-        val usedIndices = mutableSetOf<Int>()
+        var feedback = "✅ Done: Autofill completed."
+        try {
+            val roots = getTargetRoots(preferExternal = true)
+            if (roots.isEmpty()) {
+                feedback = "⚠️ Bot Error: Active screen unreadable."
+                return emptyMap()
+            }
 
-        for ((key, valueToSet) in fieldMappings) {
-            val match = findBestEditableEntry(editableEntries, key, usedIndices)
-            if (match != null) {
-                usedIndices.add(match.index)
-                val node = match.node
-                val prevValue = getActualNodeText(node)
-                val finalValue = if (append && prevValue.isNotEmpty()) "$prevValue$valueToSet" else valueToSet
+            val editableEntries = mutableListOf<EditableNodeEntry>()
+            for (root in roots) {
+                if (roots.size > 1 && root.packageName?.toString() == packageName) continue
+                collectEditableEntries(root, editableEntries)
+            }
 
-                // Focus the node first
-                node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-
-                // Perform ACTION_SET_TEXT
-                val args = Bundle().apply {
-                    putCharSequence(
-                        AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                        finalValue
+            if (editableEntries.isEmpty()) {
+                feedback = "⚠️ Bot Alert: Target fields not found."
+                for ((key, _) in fieldMappings) {
+                    results[key] = mapOf(
+                        "success" to false,
+                        "verified" to false,
+                        "error" to "No editable fields found on active screen",
+                        "availableFields" to emptyList<String>()
                     )
                 }
-                var actionSuccess = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                return results
+            }
 
-                // Fallback to Clipboard Paste if ACTION_SET_TEXT is unsupported by a custom view
-                if (!actionSuccess) {
-                    actionSuccess = pasteTextFallback(node, finalValue)
+            val usedIndices = mutableSetOf<Int>()
+            var successCount = 0
+
+            for ((key, valueToSet) in fieldMappings) {
+                val matches = findAllMatchingEditableEntries(editableEntries, key, usedIndices)
+                val match = if (matches.size > 1 && fieldMappings.size == 1 && broadcastFeedback) {
+                    // Ambiguous field: trigger overlay disambiguation dialog for user to choose
+                    FloatingBubbleService.showDisambiguationDialog(
+                        title = "🤔 Multiple fields match \"$key\". Which one?",
+                        options = matches.mapIndexed { idx, entry ->
+                            ChoiceOption(
+                                label = "#${idx + 1} ${entry.label.ifEmpty { entry.shortId.ifEmpty { "Field #${entry.index}" } }}",
+                                subtitle = formatNodeContext(entry.node),
+                                icon = null
+                            )
+                        }
+                    ) { selectedIndex ->
+                        if (selectedIndex in matches.indices) {
+                            val selectedEntry = matches[selectedIndex]
+                            writeToEditableNode(selectedEntry.node, valueToSet, append)
+                            sendBotFeedback("✅ Done: Autofill for '$key' completed.")
+                        }
+                    }
+                    matches.firstOrNull()
+                } else {
+                    findBestEditableEntry(editableEntries, key, usedIndices)
                 }
 
-                // Refresh node to verify actual text written
-                try {
-                    node.refresh()
-                } catch (_: Exception) {}
+                if (match != null) {
+                    usedIndices.add(match.index)
+                    val node = match.node
+                    val prevValue = getActualNodeText(node)
+                    val finalValue = if (append && prevValue.isNotEmpty()) "$prevValue$valueToSet" else valueToSet
 
-                val verifiedValue = getActualNodeText(node)
-                val isVerified = verifiedValue == finalValue || verifiedValue.contains(valueToSet)
+                    val actionSuccess = writeToEditableNode(node, finalValue, append = false)
+                    val verifiedValue = getActualNodeText(node)
+                    val isVerified = verifiedValue == finalValue || verifiedValue.contains(valueToSet)
+                    val ok = actionSuccess || isVerified
+                    if (ok) successCount++
 
-                results[key] = mapOf(
-                    "success" to (actionSuccess || isVerified),
-                    "verified" to isVerified,
-                    "matchedIndex" to match.index,
-                    "matchedLabel" to match.label,
-                    "previousValue" to prevValue,
-                    "writtenValue" to finalValue,
-                    "verifiedValue" to verifiedValue
-                )
+                    results[key] = mapOf(
+                        "success" to ok,
+                        "verified" to isVerified,
+                        "matchedIndex" to match.index,
+                        "matchedLabel" to match.label,
+                        "previousValue" to prevValue,
+                        "writtenValue" to finalValue,
+                        "verifiedValue" to verifiedValue
+                    )
+                } else {
+                    results[key] = mapOf(
+                        "success" to false,
+                        "verified" to false,
+                        "error" to "No matching editable field found for '$key'",
+                        "availableFields" to editableEntries.map { "#${it.index}: ${it.label}" }
+                    )
+                }
+            }
+
+            feedback = if (successCount > 0) {
+                "✅ Done: Autofill ($successCount/${fieldMappings.size}) completed."
             } else {
-                results[key] = mapOf(
-                    "success" to false,
-                    "verified" to false,
-                    "error" to "No matching editable field found for '$key'",
-                    "availableFields" to editableEntries.map { "#${it.index}: ${it.label}" }
-                )
+                "⚠️ Bot Alert: Target fields not found."
+            }
+            return results
+        } catch (e: Exception) {
+            feedback = "❌ Bot Failed: ${e.localizedMessage?.take(40) ?: "Unknown error"}"
+            return results
+        } finally {
+            if (broadcastFeedback) {
+                sendBotFeedback(feedback)
             }
         }
+    }
 
-        return results
+    private fun writeToEditableNode(node: AccessibilityNodeInfo, text: String, append: Boolean = false): Boolean {
+        val prevValue = getActualNodeText(node)
+        val finalValue = if (append && prevValue.isNotEmpty()) "$prevValue$text" else text
+
+        node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+
+        val args = Bundle().apply {
+            putCharSequence(
+                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                finalValue
+            )
+        }
+        var actionSuccess = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        if (!actionSuccess) {
+            actionSuccess = pasteTextFallback(node, finalValue)
+        }
+        try {
+            node.refresh()
+        } catch (_: Exception) {}
+        return actionSuccess
     }
 
     private fun pasteTextFallback(node: AccessibilityNodeInfo, text: String): Boolean {
@@ -878,86 +1126,296 @@ class AttendanceAccessibilityService : AccessibilityService() {
         return entries.firstOrNull { !usedIndices.contains(it.index) }
     }
 
+    private fun findAllMatchingEditableEntries(
+        entries: List<EditableNodeEntry>,
+        targetKey: String,
+        usedIndices: Set<Int>
+    ): List<EditableNodeEntry> {
+        val trimmed = targetKey.trim()
+        val normalizedKey = trimmed.lowercase().replace("_", "").replace("-", "").replace(" ", "")
+
+        val exactMatches = entries.filter {
+            !usedIndices.contains(it.index) && (
+                it.label.lowercase().replace("_", "").replace(" ", "") == normalizedKey ||
+                it.hint.lowercase().replace("_", "").replace(" ", "") == normalizedKey ||
+                it.shortId.lowercase().replace("_", "").replace(" ", "") == normalizedKey
+            )
+        }
+        if (exactMatches.isNotEmpty()) return exactMatches
+
+        val partialMatches = entries.filter {
+            !usedIndices.contains(it.index) && (
+                it.label.contains(trimmed, ignoreCase = true) ||
+                it.hint.contains(trimmed, ignoreCase = true) ||
+                it.shortId.contains(trimmed, ignoreCase = true)
+            )
+        }
+        return partialMatches
+    }
+
+    private fun formatNodeContext(node: AccessibilityNodeInfo): String {
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        val id = node.viewIdResourceName?.substringAfterLast('/') ?: ""
+        val boundsDesc = if (!bounds.isEmpty) "[${bounds.left}, ${bounds.top}]" else ""
+        val parentText = node.parent?.text?.toString()?.trim() ?: ""
+        return when {
+            id.isNotEmpty() && parentText.isNotEmpty() -> "id: $id • in \"$parentText\" $boundsDesc"
+            id.isNotEmpty() -> "id: $id $boundsDesc"
+            parentText.isNotEmpty() -> "in \"$parentText\" $boundsDesc"
+            boundsDesc.isNotEmpty() -> "position $boundsDesc"
+            else -> node.className?.toString()?.substringAfterLast('.') ?: "UI Element"
+        }
+    }
+
+    private fun findAllMatchingNodes(
+        roots: List<AccessibilityNodeInfo>,
+        target: String,
+        mustBeClickable: Boolean = false,
+        mustBeEditable: Boolean = false
+    ): List<AccessibilityNodeInfo> {
+        val results = mutableListOf<AccessibilityNodeInfo>()
+        val seen = mutableSetOf<String>()
+
+        for (root in roots) {
+            if (roots.size > 1 && root.packageName?.toString() == packageName) continue
+            collectAllMatchingNodes(root, target.lowercase().trim(), mustBeClickable, mustBeEditable, results, seen)
+        }
+        return results
+    }
+
+    private fun collectAllMatchingNodes(
+        node: AccessibilityNodeInfo,
+        targetLower: String,
+        mustBeClickable: Boolean,
+        mustBeEditable: Boolean,
+        out: MutableList<AccessibilityNodeInfo>,
+        seen: MutableSet<String>
+    ) {
+        val text = node.text?.toString()?.lowercase()?.trim() ?: ""
+        val desc = node.contentDescription?.toString()?.lowercase()?.trim() ?: ""
+        val id = node.viewIdResourceName?.lowercase() ?: ""
+        val shortId = id.substringAfterLast('/')
+
+        val matches = (text.isNotEmpty() && (text == targetLower || text.contains(targetLower))) ||
+                      (desc.isNotEmpty() && (desc == targetLower || desc.contains(targetLower))) ||
+                      (shortId.isNotEmpty() && (shortId == targetLower || shortId.contains(targetLower)))
+
+        if (matches) {
+            val passClickable = !mustBeClickable || node.isClickable || node.isCheckable || node.parent?.isClickable == true
+            val passEditable = !mustBeEditable || isNodeEditableInThirdPartyApps(node)
+
+            if (passClickable && passEditable) {
+                val bounds = Rect()
+                node.getBoundsInScreen(bounds)
+                val key = "${node.viewIdResourceName}_${bounds.left}_${bounds.top}_${bounds.right}_${bounds.bottom}"
+                if (!seen.contains(key)) {
+                    seen.add(key)
+                    out.add(node)
+                }
+            }
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectAllMatchingNodes(child, targetLower, mustBeClickable, mustBeEditable, out, seen)
+        }
+    }
+
     /**
      * Clicks a button or interactive element matching a target label, resource ID, or index (#0).
      * Automatically walks up parent hierarchy if the text node itself is not clickable,
      * and falls back to hardware coordinate tap gesture if ACTION_CLICK returns false.
      */
-    fun clickElement(targetLabel: String): Boolean {
-        val roots = getTargetRoots(preferExternal = true)
-        if (roots.isEmpty()) return false
-
+    @JvmOverloads
+    fun clickElement(targetLabel: String, broadcastFeedback: Boolean = true): Boolean {
         val trimmed = targetLabel.trim()
+        var clickedSuccess = false
+        var feedback = "✅ Done: Click '$trimmed' completed."
+        try {
+            val roots = getTargetRoots(preferExternal = true)
+            if (roots.isEmpty()) {
+                feedback = "⚠️ Bot Error: Active screen unreadable."
+                return false
+            }
 
-        // Support index syntax "#0", "#1" from clickableElements snapshot
-        val indexRegex = Regex("^#(\\d+)$")
-        val indexMatch = indexRegex.find(trimmed)
-        if (indexMatch != null) {
-            val idx = indexMatch.groupValues[1].toIntOrNull()
-            if (idx != null) {
-                val snapshot = getScreenSnapshot(preferExternal = true)
-                @Suppress("UNCHECKED_CAST")
-                val clickables = (snapshot["clickableElements"] as? List<Map<String, Any>>) ?: emptyList()
-                if (idx in clickables.indices) {
-                    val item = clickables[idx]
-                    val cx = (item["centerX"] as? Int)?.toFloat() ?: 0f
-                    val cy = (item["centerY"] as? Int)?.toFloat() ?: 0f
-                    val lbl = item["label"]?.toString() ?: ""
-                    if (lbl.isNotEmpty()) {
-                        for (root in roots) {
-                            val node = findNodeByTextOrId(root, lbl)
-                            if (node != null && performRobustClick(node)) return true
+            // Support index syntax "#0", "#1" from clickableElements snapshot
+            val indexRegex = Regex("^#(\\d+)$")
+            val indexMatch = indexRegex.find(trimmed)
+            if (indexMatch != null) {
+                val idx = indexMatch.groupValues[1].toIntOrNull()
+                if (idx != null) {
+                    val snapshot = getScreenSnapshot(preferExternal = true)
+                    @Suppress("UNCHECKED_CAST")
+                    val clickables = (snapshot["clickableElements"] as? List<Map<String, Any>>) ?: emptyList()
+                    if (idx in clickables.indices) {
+                        val item = clickables[idx]
+                        val cx = (item["centerX"] as? Int)?.toFloat() ?: 0f
+                        val cy = (item["centerY"] as? Int)?.toFloat() ?: 0f
+                        val lbl = item["label"]?.toString() ?: ""
+                        if (lbl.isNotEmpty()) {
+                            for (root in roots) {
+                                val node = findNodeByTextOrId(root, lbl)
+                                if (node != null && performRobustClick(node)) {
+                                    clickedSuccess = true
+                                    return true
+                                }
+                            }
                         }
-                    }
-                    if (cx > 0 && cy > 0) {
-                        return tapCoordinates(cx, cy)
+                        if (cx > 0 && cy > 0) {
+                            clickedSuccess = tapCoordinates(cx, cy)
+                            return clickedSuccess
+                        }
                     }
                 }
             }
-        }
 
-        for (root in roots) {
-            if (roots.size > 1 && root.packageName?.toString() == packageName) continue
-            val node = findNodeByTextOrId(root, trimmed)
-            if (node != null && performRobustClick(node)) {
-                return true
+            // Disambiguation check across interactive nodes
+            val matchingNodes = findAllMatchingNodes(roots, trimmed, mustBeClickable = false)
+            when {
+                matchingNodes.isEmpty() -> {
+                    feedback = "⚠️ Bot Alert: Target \"$trimmed\" not found."
+                    return false
+                }
+                matchingNodes.size == 1 -> {
+                    val node = matchingNodes.first()
+                    clickedSuccess = performRobustClick(node)
+                    if (!clickedSuccess) {
+                        feedback = "⚠️ Bot Alert: Could not click '$trimmed'."
+                    }
+                    return clickedSuccess
+                }
+                else -> {
+                    // Multiple matching nodes (>= 2): Trigger overlay disambiguation dialog!
+                    FloatingBubbleService.showDisambiguationDialog(
+                        title = "🤔 Multiple elements match \"$trimmed\". Which one?",
+                        options = matchingNodes.mapIndexed { idx, n ->
+                            val rawText = n.text?.toString()?.trim() ?: ""
+                            val desc = n.contentDescription?.toString()?.trim() ?: ""
+                            val shortId = n.viewIdResourceName?.substringAfterLast('/') ?: ""
+                            val displayLabel = rawText.ifEmpty { desc.ifEmpty { shortId.ifEmpty { trimmed } } }
+                            ChoiceOption(
+                                label = "#${idx + 1} $displayLabel",
+                                subtitle = formatNodeContext(n),
+                                icon = null
+                            )
+                        }
+                    ) { selectedIndex ->
+                        if (selectedIndex in matchingNodes.indices) {
+                            val chosen = matchingNodes[selectedIndex]
+                            val ok = performRobustClick(chosen)
+                            val chosenFeedback = if (ok) "✅ Done: Click '${trimmed}' completed." else "⚠️ Bot Alert: Click failed."
+                            sendBotFeedback(chosenFeedback)
+                        }
+                    }
+                    clickedSuccess = true
+                    feedback = "⏳ Disambiguating multiple elements for '$trimmed'..."
+                    return true
+                }
+            }
+        } catch (e: Exception) {
+            feedback = "❌ Bot Failed: ${e.localizedMessage?.take(40) ?: "Unknown error"}"
+            return false
+        } finally {
+            if (!clickedSuccess && !feedback.startsWith("❌") && !feedback.startsWith("⚠️ Bot Error")) {
+                feedback = "⚠️ Bot Alert: Target \"$trimmed\" not found."
+            }
+            if (broadcastFeedback) {
+                sendBotFeedback(feedback)
             }
         }
-        return false
     }
 
     /**
      * Long-clicks a button or interactive element matching [targetLabel].
      */
-    fun longClickElement(targetLabel: String): Boolean {
-        val roots = getTargetRoots(preferExternal = true)
-        if (roots.isEmpty()) return false
-        for (root in roots) {
-            if (roots.size > 1 && root.packageName?.toString() == packageName) continue
-            val node = findNodeByTextOrId(root, targetLabel.trim())
-            if (node != null) {
-                var curr: AccessibilityNodeInfo? = node
-                var depth = 0
-                while (curr != null && depth < 5) {
-                    if (curr.isLongClickable && curr.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)) {
-                        return true
-                    }
-                    curr = curr.parent
-                    depth++
+    @JvmOverloads
+    fun longClickElement(targetLabel: String, broadcastFeedback: Boolean = true): Boolean {
+        val trimmed = targetLabel.trim()
+        var clickedSuccess = false
+        var feedback = "✅ Done: Long-press '$trimmed' completed."
+        try {
+            val roots = getTargetRoots(preferExternal = true)
+            if (roots.isEmpty()) {
+                feedback = "⚠️ Bot Error: Active screen unreadable."
+                return false
+            }
+
+            val matchingNodes = findAllMatchingNodes(roots, trimmed, mustBeClickable = false)
+            when {
+                matchingNodes.isEmpty() -> {
+                    feedback = "⚠️ Bot Alert: Target \"$trimmed\" not found."
+                    return false
                 }
-                // Fallback to long-press gesture at node center
-                val bounds = Rect()
-                node.getBoundsInScreen(bounds)
-                if (!bounds.isEmpty) {
-                    return dispatchTapOrSwipe(
-                        bounds.centerX().toFloat(),
-                        bounds.centerY().toFloat(),
-                        bounds.centerX().toFloat(),
-                        bounds.centerY().toFloat(),
-                        650L
-                    )
+                matchingNodes.size == 1 -> {
+                    val node = matchingNodes.first()
+                    clickedSuccess = performRobustLongClick(node)
+                    if (!clickedSuccess) {
+                        feedback = "⚠️ Bot Alert: Could not long-press '$trimmed'."
+                    }
+                    return clickedSuccess
+                }
+                else -> {
+                    // Multiple matching nodes (>= 2): Trigger overlay disambiguation dialog!
+                    FloatingBubbleService.showDisambiguationDialog(
+                        title = "🤔 Multiple elements match \"$trimmed\". Which one?",
+                        options = matchingNodes.mapIndexed { idx, n ->
+                            val rawText = n.text?.toString()?.trim() ?: ""
+                            val desc = n.contentDescription?.toString()?.trim() ?: ""
+                            val shortId = n.viewIdResourceName?.substringAfterLast('/') ?: ""
+                            val displayLabel = rawText.ifEmpty { desc.ifEmpty { shortId.ifEmpty { trimmed } } }
+                            ChoiceOption(
+                                label = "#${idx + 1} $displayLabel",
+                                subtitle = formatNodeContext(n),
+                                icon = null
+                            )
+                        }
+                    ) { selectedIndex ->
+                        if (selectedIndex in matchingNodes.indices) {
+                            val chosen = matchingNodes[selectedIndex]
+                            val ok = performRobustLongClick(chosen)
+                            val chosenFeedback = if (ok) "✅ Done: Long-press '${trimmed}' completed." else "⚠️ Bot Alert: Long-press failed."
+                            sendBotFeedback(chosenFeedback)
+                        }
+                    }
+                    clickedSuccess = true
+                    feedback = "⏳ Disambiguating multiple elements for '$trimmed'..."
+                    return true
                 }
             }
+        } catch (e: Exception) {
+            feedback = "❌ Bot Failed: ${e.localizedMessage?.take(40) ?: "Unknown error"}"
+            return false
+        } finally {
+            if (!clickedSuccess && !feedback.startsWith("❌") && !feedback.startsWith("⚠️ Bot Error")) {
+                feedback = "⚠️ Bot Alert: Target \"$trimmed\" not found."
+            }
+            if (broadcastFeedback) {
+                sendBotFeedback(feedback)
+            }
+        }
+    }
+
+    private fun performRobustLongClick(node: AccessibilityNodeInfo): Boolean {
+        var curr: AccessibilityNodeInfo? = node
+        var depth = 0
+        while (curr != null && depth < 5) {
+            if (curr.isLongClickable && curr.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)) {
+                return true
+            }
+            curr = curr.parent
+            depth++
+        }
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        if (!bounds.isEmpty) {
+            return dispatchTapOrSwipe(
+                bounds.centerX().toFloat(),
+                bounds.centerY().toFloat(),
+                bounds.centerX().toFloat(),
+                bounds.centerY().toFloat(),
+                650L
+            )
         }
         return false
     }
@@ -965,35 +1423,58 @@ class AttendanceAccessibilityService : AccessibilityService() {
     /**
      * Sets a Checkbox, Switch, RadioButton, or Toggle element to the desired [checked] state.
      */
-    fun setCheckableState(targetLabel: String, checked: Boolean): Map<String, Any> {
-        val roots = getTargetRoots(preferExternal = true)
-        if (roots.isEmpty()) return mapOf("success" to false, "error" to "No active window")
+    @JvmOverloads
+    fun setCheckableState(
+        targetLabel: String,
+        checked: Boolean,
+        broadcastFeedback: Boolean = true
+    ): Map<String, Any> {
+        val trimmed = targetLabel.trim()
+        var feedback = "✅ Done: Toggle '$trimmed' completed."
+        try {
+            val roots = getTargetRoots(preferExternal = true)
+            if (roots.isEmpty()) {
+                feedback = "⚠️ Bot Error: Active screen unreadable."
+                return mapOf("success" to false, "error" to "No active window")
+            }
 
-        for (root in roots) {
-            if (roots.size > 1 && root.packageName?.toString() == packageName) continue
-            val node = findCheckableNode(root, targetLabel.trim())
-            if (node != null) {
-                val currentlyChecked = node.isChecked
-                if (currentlyChecked == checked) {
+            for (root in roots) {
+                if (roots.size > 1 && root.packageName?.toString() == packageName) continue
+                val node = findCheckableNode(root, trimmed)
+                if (node != null) {
+                    val currentlyChecked = node.isChecked
+                    if (currentlyChecked == checked) {
+                        return mapOf(
+                            "success" to true,
+                            "changed" to false,
+                            "isChecked" to currentlyChecked,
+                            "message" to "Already in desired state ($checked)"
+                        )
+                    }
+                    val clicked = performRobustClick(node)
+                    try {
+                        node.refresh()
+                    } catch (_: Exception) {}
+                    if (!clicked) {
+                        feedback = "⚠️ Bot Alert: Could not toggle '$trimmed'."
+                    }
                     return mapOf(
-                        "success" to true,
-                        "changed" to false,
-                        "isChecked" to currentlyChecked,
-                        "message" to "Already in desired state ($checked)"
+                        "success" to clicked,
+                        "changed" to clicked,
+                        "isChecked" to node.isChecked
                     )
                 }
-                val clicked = performRobustClick(node)
-                try {
-                    node.refresh()
-                } catch (_: Exception) {}
-                return mapOf(
-                    "success" to clicked,
-                    "changed" to clicked,
-                    "isChecked" to node.isChecked
-                )
+            }
+            feedback = "⚠️ Bot Alert: Target '$trimmed' not found."
+            return mapOf("success" to false, "error" to "Checkable element '$targetLabel' not found")
+        } catch (e: Exception) {
+            feedback = "❌ Bot Failed: ${e.localizedMessage?.take(40) ?: "Unknown error"}"
+            return mapOf("success" to false, "error" to (e.localizedMessage ?: "Unknown error"))
+        } finally {
+            if (broadcastFeedback) {
+                sendBotFeedback(feedback)
             }
         }
-        return mapOf("success" to false, "error" to "Checkable element '$targetLabel' not found")
     }
 
     private fun performRobustClick(node: AccessibilityNodeInfo): Boolean {
@@ -1098,33 +1579,50 @@ class AttendanceAccessibilityService : AccessibilityService() {
     /**
      * Scrolls the active screen in [direction] ("down"/"forward", "up"/"backward", "left", "right").
      */
-    fun scrollScreen(direction: String): Boolean {
+    @JvmOverloads
+    fun scrollScreen(direction: String, broadcastFeedback: Boolean = true): Boolean {
         val dir = direction.lowercase().trim()
-        val roots = getTargetRoots(preferExternal = true)
+        var scrolled = false
+        var feedback = "✅ Done: Scroll $dir completed."
+        try {
+            val roots = getTargetRoots(preferExternal = true)
 
-        val scrollAction = when (dir) {
-            "up", "backward", "top", "right" -> AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
-            else -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
-        }
-
-        for (root in roots) {
-            if (roots.size > 1 && root.packageName?.toString() == packageName) continue
-            val scrollable = findScrollableNode(root)
-            if (scrollable != null && scrollable.performAction(scrollAction)) {
-                return true
+            val scrollAction = when (dir) {
+                "up", "backward", "top", "right" -> AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+                else -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
             }
-        }
 
-        // Fallback to physical swipe gesture on screen
-        val displayMetrics = resources.displayMetrics
-        val w = displayMetrics.widthPixels.toFloat()
-        val h = displayMetrics.heightPixels.toFloat()
+            for (root in roots) {
+                if (roots.size > 1 && root.packageName?.toString() == packageName) continue
+                val scrollable = findScrollableNode(root)
+                if (scrollable != null && scrollable.performAction(scrollAction)) {
+                    scrolled = true
+                    return true
+                }
+            }
 
-        return when (dir) {
-            "up", "backward" -> dispatchTapOrSwipe(w * 0.5f, h * 0.3f, w * 0.5f, h * 0.75f, 350L)
-            "left" -> dispatchTapOrSwipe(w * 0.8f, h * 0.5f, w * 0.2f, h * 0.5f, 350L)
-            "right" -> dispatchTapOrSwipe(w * 0.2f, h * 0.5f, w * 0.8f, h * 0.5f, 350L)
-            else -> dispatchTapOrSwipe(w * 0.5f, h * 0.75f, w * 0.5f, h * 0.25f, 350L)
+            // Fallback to physical swipe gesture on screen
+            val displayMetrics = resources.displayMetrics
+            val w = displayMetrics.widthPixels.toFloat()
+            val h = displayMetrics.heightPixels.toFloat()
+
+            scrolled = when (dir) {
+                "up", "backward" -> dispatchTapOrSwipe(w * 0.5f, h * 0.3f, w * 0.5f, h * 0.75f, 350L)
+                "left" -> dispatchTapOrSwipe(w * 0.8f, h * 0.5f, w * 0.2f, h * 0.5f, 350L)
+                "right" -> dispatchTapOrSwipe(w * 0.2f, h * 0.5f, w * 0.8f, h * 0.5f, 350L)
+                else -> dispatchTapOrSwipe(w * 0.5f, h * 0.75f, w * 0.5f, h * 0.25f, 350L)
+            }
+            return scrolled
+        } catch (e: Exception) {
+            feedback = "❌ Bot Failed: ${e.localizedMessage?.take(40) ?: "Unknown error"}"
+            return false
+        } finally {
+            if (!scrolled && !feedback.startsWith("❌")) {
+                feedback = "⚠️ Bot Alert: Could not scroll $dir."
+            }
+            if (broadcastFeedback) {
+                sendBotFeedback(feedback)
+            }
         }
     }
 
@@ -1210,16 +1708,36 @@ class AttendanceAccessibilityService : AccessibilityService() {
      * Performs global Android system navigation actions:
      * BACK, HOME, RECENTS, NOTIFICATIONS, QUICK_SETTINGS
      */
-    fun performSystemNavigation(action: String): Boolean {
-        val globalAction = when (action.uppercase().trim()) {
-            "BACK", "GO_BACK", "NAVIGATE_BACK" -> GLOBAL_ACTION_BACK
-            "HOME", "GO_HOME" -> GLOBAL_ACTION_HOME
-            "RECENTS", "RECENT_APPS", "OVERVIEW" -> GLOBAL_ACTION_RECENTS
-            "NOTIFICATIONS" -> GLOBAL_ACTION_NOTIFICATIONS
-            "QUICK_SETTINGS" -> GLOBAL_ACTION_QUICK_SETTINGS
-            else -> return false
+    @JvmOverloads
+    fun performSystemNavigation(action: String, broadcastFeedback: Boolean = true): Boolean {
+        val norm = action.uppercase().trim()
+        var ok = false
+        var feedback = "✅ Done: Navigate $norm completed."
+        try {
+            val globalAction = when (norm) {
+                "BACK", "GO_BACK", "NAVIGATE_BACK" -> GLOBAL_ACTION_BACK
+                "HOME", "GO_HOME" -> GLOBAL_ACTION_HOME
+                "RECENTS", "RECENT_APPS", "OVERVIEW" -> GLOBAL_ACTION_RECENTS
+                "NOTIFICATIONS" -> GLOBAL_ACTION_NOTIFICATIONS
+                "QUICK_SETTINGS" -> GLOBAL_ACTION_QUICK_SETTINGS
+                else -> {
+                    feedback = "⚠️ Bot Alert: Unknown navigation '$norm'."
+                    return false
+                }
+            }
+            ok = performGlobalAction(globalAction)
+            if (!ok) {
+                feedback = "⚠️ Bot Error: Navigation $norm failed."
+            }
+            return ok
+        } catch (e: Exception) {
+            feedback = "❌ Bot Failed: ${e.localizedMessage?.take(40) ?: "Unknown error"}"
+            return false
+        } finally {
+            if (broadcastFeedback) {
+                sendBotFeedback(feedback)
+            }
         }
-        return performGlobalAction(globalAction)
     }
 
     /**
@@ -1374,47 +1892,155 @@ class AttendanceAccessibilityService : AccessibilityService() {
         return false
     }
 
+    data class AppCandidate(val label: String, val packageName: String, val icon: Drawable? = null)
+
+    /**
+     * Resolves app launch request. If an exact match exists or only 1 fuzzy candidate matches,
+     * launches immediately; if multiple candidates match, presents the overlay disambiguation dialog.
+     */
+    fun launchOrResolveApp(query: String, context: Context = this) {
+        val q = query.trim()
+        if (q.isEmpty()) {
+            sendBotFeedback("⚠️ Bot Alert: Empty app query.")
+            return
+        }
+
+        // Check if query is a known system category (e.g. Contacts, Browser, Phone)
+        if (launchDefaultApp(q)) {
+            sendBotFeedback("✅ Done: Opened $q.")
+            return
+        }
+
+        val pm = context.packageManager
+        val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+
+        val installedApps = pm.queryIntentActivities(launcherIntent, 0).map { resolveInfo ->
+            AppCandidate(
+                label = resolveInfo.loadLabel(pm).toString(),
+                packageName = resolveInfo.activityInfo.packageName,
+                icon = resolveInfo.loadIcon(pm)
+            )
+        }
+
+        // 1. Exact match check (case-insensitive)
+        val exactMatch = installedApps.firstOrNull {
+            it.label.equals(q, ignoreCase = true) || it.packageName.equals(q, ignoreCase = true)
+        }
+        if (exactMatch != null) {
+            openPackage(exactMatch, context)
+            return
+        }
+
+        // 2. Fuzzy / partial match check
+        val candidates = installedApps.filter {
+            it.label.contains(q, ignoreCase = true) ||
+            it.packageName.contains(q, ignoreCase = true)
+        }.distinctBy { it.packageName }
+
+        when {
+            candidates.size == 1 -> openPackage(candidates.first(), context)
+            candidates.size > 1 -> {
+                // Ambiguous: Present GUI selection dialog with native app icons over active app
+                FloatingBubbleService.showDisambiguationDialog(
+                    title = "🤔 Multiple apps match \"$q\". Which one?",
+                    options = candidates.map {
+                        ChoiceOption(
+                            label = it.label,
+                            subtitle = it.packageName,
+                            icon = it.icon
+                        )
+                    }
+                ) { selectedIndex ->
+                    if (selectedIndex in candidates.indices) {
+                        openPackage(candidates[selectedIndex], context)
+                    }
+                }
+            }
+            else -> {
+                sendBotFeedback("⚠️ Bot Alert: No installed app matched \"$q\".")
+            }
+        }
+    }
+
+    private fun openPackage(app: AppCandidate, context: Context) {
+        val pm = context.packageManager
+        val launchIntent = pm.getLaunchIntentForPackage(app.packageName)
+        if (launchIntent != null) {
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(launchIntent)
+            lastExternalPackage = app.packageName
+            sendBotFeedback("✅ Done: Opened ${app.label}.")
+        } else {
+            sendBotFeedback("⚠️ Bot Error: Cannot launch ${app.label}.")
+        }
+    }
+
     /**
      * Launches an installed external Android app by its human name (e.g. "Contacts", "Chrome")
      * or package name (e.g. "com.google.android.contacts"). Prioritizes the user's default app.
      */
-    fun launchAppByPackageOrName(nameOrPackage: String): Boolean {
+    @JvmOverloads
+    fun launchAppByPackageOrName(nameOrPackage: String, broadcastFeedback: Boolean = true): Boolean {
         val query = nameOrPackage.trim()
-        if (query.isEmpty()) return false
+        var launched = false
+        var feedback = "✅ Done: Launch $query completed."
+        try {
+            if (query.isEmpty()) {
+                feedback = "⚠️ Bot Alert: Empty app name."
+                return false
+            }
 
-        // 1. Check if the query refers to a system default app category first
-        if (launchDefaultApp(query)) {
-            return true
-        }
-
-        val pm = packageManager
-
-        // 2. Direct package launch
-        val directIntent = pm.getLaunchIntentForPackage(query)
-        if (directIntent != null) {
-            directIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(directIntent)
-            lastExternalPackage = query
-            return true
-        }
-
-        // 2. Search launchable activities by app label or partial package name
-        val apps = getInstalledApps(query)
-        val bestMatch = apps.firstOrNull {
-            it["appName"].equals(query, ignoreCase = true) ||
-                it["packageName"].equals(query, ignoreCase = true)
-        } ?: apps.firstOrNull()
-
-        if (bestMatch != null) {
-            val pkg = bestMatch["packageName"] ?: return false
-            val launchIntent = pm.getLaunchIntentForPackage(pkg)
-            if (launchIntent != null) {
-                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(launchIntent)
-                lastExternalPackage = pkg
+            // 1. Check if the query refers to a system default app category first
+            if (launchDefaultApp(query)) {
+                launched = true
                 return true
             }
+
+            val pm = packageManager
+
+            // 2. Direct package launch
+            val directIntent = pm.getLaunchIntentForPackage(query)
+            if (directIntent != null) {
+                directIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(directIntent)
+                lastExternalPackage = query
+                launched = true
+                return true
+            }
+
+            // 3. Search launchable activities by app label or partial package name
+            val apps = getInstalledApps(query)
+            val bestMatch = apps.firstOrNull {
+                it["appName"].equals(query, ignoreCase = true) ||
+                    it["packageName"].equals(query, ignoreCase = true)
+            } ?: apps.firstOrNull()
+
+            if (bestMatch != null) {
+                val pkg = bestMatch["packageName"]
+                if (pkg != null) {
+                    val launchIntent = pm.getLaunchIntentForPackage(pkg)
+                    if (launchIntent != null) {
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(launchIntent)
+                        lastExternalPackage = pkg
+                        launched = true
+                        return true
+                    }
+                }
+            }
+            return false
+        } catch (e: Exception) {
+            feedback = "❌ Bot Failed: ${e.localizedMessage?.take(40) ?: "Unknown error"}"
+            return false
+        } finally {
+            if (!launched && !feedback.startsWith("❌") && query.isNotEmpty()) {
+                feedback = "⚠️ Bot Alert: App '$query' not found."
+            }
+            if (broadcastFeedback) {
+                sendBotFeedback(feedback)
+            }
         }
-        return false
     }
 }

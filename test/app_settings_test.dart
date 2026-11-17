@@ -16,8 +16,12 @@ void main() {
     expect(settings.inputDelayMs, 150);
     expect(settings.autoSwitchToExternal, isTrue);
     expect(settings.verifyWrites, isTrue);
+    expect(settings.ttsVoiceEnabled, isTrue);
     expect(settings.typingStrategy, 'smart_auto');
     expect(settings.shortcuts.length, greaterThanOrEqualTo(5));
+
+    await settings.setTtsVoiceEnabled(false);
+    expect(settings.ttsVoiceEnabled, isFalse);
 
     await settings.setInputDelayMs(300);
     expect(settings.inputDelayMs, 300);

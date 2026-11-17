@@ -30,7 +30,17 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.graphics.drawable.Drawable
+import android.speech.tts.TextToSpeech
 import android.widget.Toast
+import java.util.ArrayDeque
+import java.util.Locale
+
+data class ChoiceOption(
+    val label: String,
+    val subtitle: String? = null,
+    val icon: Drawable? = null
+)
 
 class FloatingBubbleService : Service() {
 
@@ -41,8 +51,17 @@ class FloatingBubbleService : Service() {
     private var panelParams: WindowManager.LayoutParams? = null
 
     private var statusTextView: TextView? = null
+    private var panelStatusTextView: TextView? = null
     private var promptInput: EditText? = null
     private var targetAppBadge: TextView? = null
+
+    // Native Text-to-Speech Engine & Chat History Feed
+    private var tts: TextToSpeech? = null
+    private var ttsReady: Boolean = false
+    private var speakerToggleBtn: Button? = null
+    private var chatContainer: LinearLayout? = null
+    private var chatScrollView: ScrollView? = null
+    private val chatHistory = ArrayDeque<Pair<String, String>>()
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -52,18 +71,123 @@ class FloatingBubbleService : Service() {
         const val ACTION_SHOW_PANEL = "com.dartnexuslab.omnipilot.SHOW_PANEL"
         const val ACTION_TOGGLE = "com.dartnexuslab.omnipilot.TOGGLE"
 
+        // Synced with Flutter SharedPreferences key "flutter.tts_voice_enabled"
+        private const val PREFS_NAME = "FlutterSharedPreferences"
+        private const val KEY_TTS_VOICE_ENABLED = "flutter.tts_voice_enabled"
+        private const val ALT_KEY_TTS = "omni_tts_voice_enabled"
+
+        @Volatile
+        private var instance: FloatingBubbleService? = null
+
+        val currentInstance: FloatingBubbleService?
+            get() = instance
+
         @Volatile
         var isRunning = false
             private set
 
-        @Volatile
-        var currentInstance: FloatingBubbleService? = null
-            private set
+        /**
+         * Checks whether TTS voice replies are enabled, checking Flutter SharedPreferences first.
+         */
+        val isTtsVoiceEnabled: Boolean
+            get() {
+                val ctx = instance ?: return true
+                val sp = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                return if (sp.contains(KEY_TTS_VOICE_ENABLED)) {
+                    sp.getBoolean(KEY_TTS_VOICE_ENABLED, true)
+                } else {
+                    ctx.getSharedPreferences("omnipilot_prefs", Context.MODE_PRIVATE)
+                        .getBoolean(ALT_KEY_TTS, true)
+                }
+            }
+
+        /**
+         * Sets whether TTS voice replies are enabled, syncing to both SharedPreferences and updating the UI.
+         */
+        fun setTtsVoiceEnabled(enabled: Boolean) {
+            instance?.let { service ->
+                service.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean(KEY_TTS_VOICE_ENABLED, enabled)
+                    .apply()
+                service.getSharedPreferences("omnipilot_prefs", Context.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean(ALT_KEY_TTS, enabled)
+                    .apply()
+                Handler(Looper.getMainLooper()).post {
+                    service.updateSpeakerButtonUI()
+                }
+            }
+        }
+
+        /**
+         * Sanitizes feedback text for spoken TTS output: strips URLs, emojis, and markdown.
+         */
+        fun cleanTextForSpeech(text: String): String {
+            if (text.isBlank()) return ""
+            return text
+                // Strip URLs
+                .replace(Regex("""https?://\S+"""), "")
+                // Strip emojis and unicode surrogate symbols
+                .replace(Regex("""[\uD83C-\uDBFF\uDC00-\uDFFF]+"""), "")
+                .replace(Regex("""[\u2600-\u27BF]"""), "")
+                // Strip markdown formatting characters
+                .replace(Regex("""[*#_~`>|\-]"""), " ")
+                // Collapse multiple spaces/newlines into a single clean space
+                .replace(Regex("""\s+"""), " ")
+                .trim()
+        }
+
+        /**
+         * Speaks [text] immediately via the native TTS engine if voice is enabled.
+         */
+        fun speakText(text: String) {
+            instance?.let { service ->
+                Handler(Looper.getMainLooper()).post {
+                    service.speakTextDirectly(text)
+                }
+            }
+        }
 
         /**
          * Callback registered by MainActivity to process natural-language prompts via Flutter's Gemini AssistantController.
          */
         var onOverlayPromptHandler: ((String, (String) -> Unit) -> Unit)? = null
+
+        private fun View.removeCallbacksAndMessages(token: Any?) {
+            handler?.removeCallbacksAndMessages(token)
+        }
+
+        fun updateStatusBubble(feedback: String) {
+            instance?.let { service ->
+                Handler(Looper.getMainLooper()).post {
+                    service.statusTextView?.apply {
+                        text = feedback
+                        visibility = View.VISIBLE
+                        // Auto-hide after 3.5 seconds
+                        removeCallbacksAndMessages(null)
+                        postDelayed({ visibility = View.GONE }, 3500)
+                    }
+                    service.panelStatusTextView?.text = feedback
+                    service.addChatMessage("OmniPilot", feedback)
+                    if (isTtsVoiceEnabled) {
+                        service.speakTextDirectly(feedback)
+                    }
+                }
+            }
+        }
+
+        fun showDisambiguationDialog(
+            title: String,
+            options: List<ChoiceOption>,
+            onSelect: (Int) -> Unit
+        ) {
+            instance?.let { service ->
+                Handler(Looper.getMainLooper()).post {
+                    service.renderOverlayChoiceCard(title, options, onSelect)
+                }
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -71,7 +195,7 @@ class FloatingBubbleService : Service() {
     override fun onCreate() {
         super.onCreate()
         isRunning = true
-        currentInstance = this
+        instance = this
         createNotificationChannel()
 
         val notification = buildForegroundNotification()
@@ -88,7 +212,23 @@ class FloatingBubbleService : Service() {
 
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         setupFloatingBubble()
+        setupFloatingStatusBubble()
         setupFloatingCommandPanel()
+
+        // Initialize Android TextToSpeech engine
+        try {
+            tts = TextToSpeech(this) { status ->
+                if (status == TextToSpeech.SUCCESS) {
+                    val result = tts?.setLanguage(Locale.US)
+                    if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
+                        tts?.setSpeechRate(1.05f)
+                        ttsReady = true
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -206,6 +346,48 @@ class FloatingBubbleService : Service() {
         }
     }
 
+    /**
+     * Renders a brief, auto-dismissing bot reply badge directly over the active app
+     * whenever an action finishes or fails.
+     */
+    private fun setupFloatingStatusBubble() {
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            overlayLayoutType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = dp(24)
+        }
+
+        val badgeTv = TextView(this).apply {
+            text = ""
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            setTypeface(typeface, Typeface.BOLD)
+            maxLines = 3
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(16).toFloat()
+                setColor(Color.parseColor("#E60F172A"))
+                setStroke(dp(1), Color.parseColor("#38BDF8"))
+            }
+            elevation = dp(10).toFloat()
+            visibility = View.GONE
+        }
+
+        statusTextView = badgeTv
+        try {
+            windowManager?.addView(badgeTv, params)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     private fun setupFloatingCommandPanel() {
         val screenWidth = resources.displayMetrics.widthPixels
         val panelWidth = (screenWidth * 0.92).toInt()
@@ -277,6 +459,15 @@ class FloatingBubbleService : Service() {
         titleCol.addView(titleText)
         titleCol.addView(badgeText)
 
+        val speakerBtn = createSmallButton(
+            if (isTtsVoiceEnabled) "🔊 Voice On" else "🔇 Muted",
+            if (isTtsVoiceEnabled) "#DCFCE7" else "#F1F5F9",
+            if (isTtsVoiceEnabled) "#15803D" else "#64748B"
+        ) {
+            setTtsVoiceEnabled(!isTtsVoiceEnabled)
+        }
+        speakerToggleBtn = speakerBtn
+
         val openAppBtn = createSmallButton("↗ App", "#E2E8F0", "#1E293B") {
             collapseCommandPanel()
             val intent = Intent(this, MainActivity::class.java).apply {
@@ -290,8 +481,10 @@ class FloatingBubbleService : Service() {
         }
 
         headerRow.addView(titleCol)
+        headerRow.addView(speakerBtn)
+        headerRow.addView( View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(4), dp(1)) } )
         headerRow.addView(openAppBtn)
-        headerRow.addView( View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(6), dp(1)) } )
+        headerRow.addView( View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(4), dp(1)) } )
         headerRow.addView(closeBtn)
 
         // 2. Quick Action Chips Row
@@ -398,7 +591,7 @@ class FloatingBubbleService : Service() {
         inputRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(8), dp(1)) })
         inputRow.addView(sendBtn)
 
-        // 4. Status / Output Scroll Area
+        // 4. Status / Mini Chat History Feed Area
         val statusScroll = ScrollView(this).apply {
             val scrollBg = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
@@ -406,22 +599,34 @@ class FloatingBubbleService : Service() {
                 setColor(Color.parseColor("#0F172A"))
             }
             background = scrollBg
-            val pad = dp(10)
+            val pad = dp(8)
             setPadding(pad, pad, pad, pad)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(135)
+                dp(145)
+            )
+            isVerticalScrollBarEnabled = true
+        }
+        chatScrollView = statusScroll
+
+        val chatLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
             )
         }
+        chatContainer = chatLayout
 
         val statusTv = TextView(this).apply {
-            text = "Ready. Tap 'Check Writes & Fields' to inspect the active app or type a prompt above."
-            setTextColor(Color.parseColor("#E2E8F0"))
+            text = "🤖 OmniPilot Ready. Tap chips or ask anything above..."
+            setTextColor(Color.parseColor("#94A3B8"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            typeface = Typeface.MONOSPACE
+            setPadding(dp(4), dp(4), dp(4), dp(4))
         }
-        statusTextView = statusTv
-        statusScroll.addView(statusTv)
+        panelStatusTextView = statusTv
+        chatLayout.addView(statusTv)
+        statusScroll.addView(chatLayout)
 
         rootCard.addView(headerRow)
         rootCard.addView(chipScroll)
@@ -458,6 +663,96 @@ class FloatingBubbleService : Service() {
                 setColor(Color.parseColor(bgColorHex))
             }
             setOnClickListener { onClick() }
+        }
+    }
+
+    fun updateSpeakerButtonUI() {
+        val btn = speakerToggleBtn ?: return
+        val enabled = isTtsVoiceEnabled
+        if (enabled) {
+            btn.text = "🔊 Voice On"
+            btn.setTextColor(Color.parseColor("#15803D"))
+            (btn.background as? GradientDrawable)?.setColor(Color.parseColor("#DCFCE7"))
+        } else {
+            btn.text = "🔇 Muted"
+            btn.setTextColor(Color.parseColor("#64748B"))
+            (btn.background as? GradientDrawable)?.setColor(Color.parseColor("#F1F5F9"))
+        }
+    }
+
+    fun speakTextDirectly(rawText: String) {
+        val clean = cleanTextForSpeech(rawText)
+        if (clean.isBlank()) return
+        if (ttsReady && tts != null) {
+            try {
+                tts?.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "omnipilot_reply")
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun addChatMessage(sender: String, message: String) {
+        if (message.isBlank()) return
+        mainHandler.post {
+            val container = chatContainer ?: return@post
+            val scroll = chatScrollView
+
+            // Keep max 15 messages in history
+            if (chatHistory.size >= 15) {
+                chatHistory.removeFirst()
+                if (container.childCount > 0) {
+                    container.removeViewAt(0)
+                }
+            }
+            chatHistory.addLast(Pair(sender, message))
+
+            val isUser = sender.equals("You", ignoreCase = true)
+            val bubble = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                val bg = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = dp(8).toFloat()
+                    if (isUser) {
+                        setColor(Color.parseColor("#1D4ED8")) // vibrant blue
+                    } else {
+                        setColor(Color.parseColor("#1E293B")) // slate
+                        setStroke(dp(1), Color.parseColor("#38BDF8"))
+                    }
+                }
+                background = bg
+                val padH = dp(10)
+                val padV = dp(6)
+                setPadding(padH, padV, padH, padV)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    gravity = if (isUser) Gravity.END else Gravity.START
+                    bottomMargin = dp(6)
+                }
+            }
+
+            val senderTv = TextView(this).apply {
+                text = if (isUser) "You" else "OmniPilot"
+                setTextColor(if (isUser) Color.parseColor("#93C5FD") else Color.parseColor("#38BDF8"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+                setTypeface(typeface, Typeface.BOLD)
+            }
+
+            val messageTv = TextView(this).apply {
+                text = message
+                setTextColor(Color.WHITE)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            }
+
+            bubble.addView(senderTv)
+            bubble.addView(messageTv)
+            container.addView(bubble)
+
+            scroll?.post {
+                scroll.fullScroll(View.FOCUS_DOWN)
+            }
         }
     }
 
@@ -532,309 +827,367 @@ class FloatingBubbleService : Service() {
     }
 
     private fun updateStatus(message: String) {
-        mainHandler.post {
-            statusTextView?.text = message
-        }
+        updateStatusBubble(message)
     }
 
     private fun performNativeInspectAndVerify() {
-        val service = AttendanceAccessibilityService.instance
-        if (service == null) {
-            updateStatus("⚠️ Accessibility Service is disabled. Enable it in Android Settings > Accessibility.")
-            return
-        }
-
-        val snapshot = service.getScreenSnapshot(preferExternal = true)
-        val pkg = snapshot["activePackage"]?.toString() ?: "Unknown"
-        mainHandler.post {
-            targetAppBadge?.text = "Target App: $pkg"
-        }
-
-        @Suppress("UNCHECKED_CAST")
-        val fields = (snapshot["editableFields"] as? List<Map<String, Any>>) ?: emptyList()
-        @Suppress("UNCHECKED_CAST")
-        val buttons = (snapshot["clickableElements"] as? List<Map<String, Any>>) ?: emptyList()
-
-        val sb = StringBuilder()
-        sb.appendLine("📱 Active App: $pkg")
-        sb.appendLine("✏️ Editable Fields (${fields.size}):")
-        if (fields.isEmpty()) {
-            sb.appendLine("  (No editable inputs on current screen)")
-        } else {
-            for (f in fields) {
-                val idx = f["index"]
-                val lbl = f["label"]?.toString()?.ifEmpty { f["shortId"]?.toString() ?: "Field" }
-                val valStr = f["text"]?.toString() ?: ""
-                val state = if (valStr.isNotEmpty()) "✅ Written: \"$valStr\"" else "⬜ Empty"
-                sb.appendLine("  #$idx [$lbl] -> $state")
+        var feedback = "⚠️ Bot Error: Active screen unreadable."
+        try {
+            val service = AttendanceAccessibilityService.instance
+            if (service == null) {
+                feedback = "⚠️ Bot Error: Accessibility Service is disabled."
+                return
             }
-        }
 
-        val btnLabels = buttons.mapNotNull { it["label"]?.toString()?.takeIf { s -> s.isNotEmpty() } }.distinct().take(8)
-        if (btnLabels.isNotEmpty()) {
-            sb.appendLine("🔘 Buttons: ${btnLabels.joinToString(", ")}")
-        }
+            val snapshot = service.getScreenSnapshot(preferExternal = true)
+            val pkg = snapshot["activePackage"]?.toString() ?: "Unknown"
+            mainHandler.post {
+                targetAppBadge?.text = "Target App: $pkg"
+            }
 
-        updateStatus(sb.toString().trim())
+            @Suppress("UNCHECKED_CAST")
+            val fields = (snapshot["editableFields"] as? List<Map<String, Any>>) ?: emptyList()
+            @Suppress("UNCHECKED_CAST")
+            val buttons = (snapshot["clickableElements"] as? List<Map<String, Any>>) ?: emptyList()
+
+            val sb = StringBuilder()
+            sb.appendLine("📱 Active App: $pkg")
+            sb.appendLine("✏️ Editable Fields (${fields.size}):")
+            if (fields.isEmpty()) {
+                sb.appendLine("  (No editable inputs on current screen)")
+            } else {
+                for (f in fields) {
+                    val idx = f["index"]
+                    val lbl = f["label"]?.toString()?.ifEmpty { f["shortId"]?.toString() ?: "Field" }
+                    val valStr = f["text"]?.toString() ?: ""
+                    val state = if (valStr.isNotEmpty()) "✅ Written: \"$valStr\"" else "⬜ Empty"
+                    sb.appendLine("  #$idx [$lbl] -> $state")
+                }
+            }
+
+            val btnLabels = buttons.mapNotNull { it["label"]?.toString()?.takeIf { s -> s.isNotEmpty() } }.distinct().take(8)
+            if (btnLabels.isNotEmpty()) {
+                sb.appendLine("🔘 Buttons: ${btnLabels.joinToString(", ")}")
+            }
+
+            feedback = sb.toString().trim()
+        } catch (e: Exception) {
+            feedback = "❌ Bot Failed: ${e.localizedMessage?.take(40) ?: "Unknown error"}"
+        } finally {
+            updateStatus(feedback)
+        }
     }
 
     private fun performAiNoteWriteWorkflow() {
         val service = AttendanceAccessibilityService.instance
         if (service == null) {
-            updateStatus("⚠️ Accessibility Service is disabled.")
+            updateStatus("⚠️ Bot Error: Accessibility Service is disabled.")
             return
         }
 
         Thread {
-            val snapshot = service.getScreenSnapshot(preferExternal = true)
-            val pkg = snapshot["activePackage"]?.toString() ?: ""
+            var feedback = "⚠️ Bot Alert: Target fields not found."
+            try {
+                val snapshot = service.getScreenSnapshot(preferExternal = true)
+                val pkg = snapshot["activePackage"]?.toString() ?: ""
 
-            // Step 1: If the app has a "Create a new note" button (e.g. Fossify Notes), click it & title the note!
-            var createdNewTab = false
-            if (service.clickElement("Create a new note") || service.clickElement("New note")) {
-                try { Thread.sleep(500) } catch (_: InterruptedException) {}
-                service.writeFieldsWithVerification(mapOf("#0" to "Class 10-A AI Report"), append = false)
-                try { Thread.sleep(300) } catch (_: InterruptedException) {}
-                createdNewTab = service.clickElement("OK") || service.clickElement("Create")
-                try { Thread.sleep(500) } catch (_: InterruptedException) {}
-            }
-
-            // Step 2: Write structured multi-line AI note into the note editor & verify
-            val noteBody = buildString {
-                appendLine("📋 CLASS 10-A ATTENDANCE & AI LOG")
-                appendLine("Date: October 29, 2026")
-                appendLine("----------------------------------------")
-                appendLine("✅ Summary: 28 Present / 30 Total (93.3%)")
-                appendLine("")
-                appendLine("👤 Verified Student Records:")
-                appendLine("1. Ali Asghar (Roll #12) — Present")
-                appendLine("2. Fatima Khan (Roll #08) — Present")
-                appendLine("3. Zayd Ahmed (Roll #19) — Late")
-                appendLine("4. Sara Malik (Roll #04) — Absent")
-                appendLine("")
-                appendLine("🤖 Action Items:")
-                appendLine("• Synced attendance sheet with Cloud Firestore")
-                appendLine("• Verified external form writes via Accessibility Copilot")
-            }.trim()
-
-            val writeResults = service.writeFieldsWithVerification(mapOf("#0" to noteBody), append = false)
-            @Suppress("UNCHECKED_CAST")
-            val info = writeResults["#0"] as? Map<String, Any>
-            val verifiedVal = info?.get("verifiedValue")?.toString() ?: ""
-            val isVerified = info?.get("verified") == true
-
-            val report = buildString {
-                appendLine("📝 AI Note Written in $pkg")
-                if (createdNewTab) {
-                    appendLine("➕ Created New Note Tab: \"Class 10-A AI Report\"")
+                // Step 1: If the app has a "Create a new note" button (e.g. Fossify Notes), click it & title the note!
+                var createdNewTab = false
+                if (service.clickElement("Create a new note", broadcastFeedback = false) ||
+                    service.clickElement("New note", broadcastFeedback = false)
+                ) {
+                    try { Thread.sleep(500) } catch (_: InterruptedException) {}
+                    service.writeFieldsWithVerification(mapOf("#0" to "Class 10-A AI Report"), append = false, broadcastFeedback = false)
+                    try { Thread.sleep(300) } catch (_: InterruptedException) {}
+                    createdNewTab = service.clickElement("OK", broadcastFeedback = false) ||
+                        service.clickElement("Create", broadcastFeedback = false)
+                    try { Thread.sleep(500) } catch (_: InterruptedException) {}
                 }
-                appendLine("✔️ Write Verified: $isVerified (${verifiedVal.length} chars)")
-                appendLine("📄 Preview: \"${verifiedVal.lines().firstOrNull() ?: ""}\"")
-            }.trim()
 
-            updateStatus(report)
+                // Step 2: Write structured multi-line AI note into the note editor & verify
+                val noteBody = buildString {
+                    appendLine("📋 CLASS 10-A ATTENDANCE & AI LOG")
+                    appendLine("Date: October 29, 2026")
+                    appendLine("----------------------------------------")
+                    appendLine("✅ Summary: 28 Present / 30 Total (93.3%)")
+                    appendLine("")
+                    appendLine("👤 Verified Student Records:")
+                    appendLine("1. Ali Asghar (Roll #12) — Present")
+                    appendLine("2. Fatima Khan (Roll #08) — Present")
+                    appendLine("3. Zayd Ahmed (Roll #19) — Late")
+                    appendLine("4. Sara Malik (Roll #04) — Absent")
+                    appendLine("")
+                    appendLine("🤖 Action Items:")
+                    appendLine("• Synced attendance sheet with Cloud Firestore")
+                    appendLine("• Verified external form writes via Accessibility Copilot")
+                }.trim()
+
+                val writeResults = service.writeFieldsWithVerification(mapOf("#0" to noteBody), append = false)
+                @Suppress("UNCHECKED_CAST")
+                val info = writeResults["#0"] as? Map<String, Any>
+                val verifiedVal = info?.get("verifiedValue")?.toString() ?: ""
+                val isVerified = info?.get("verified") == true || info?.get("success") == true
+
+                feedback = if (isVerified) {
+                    buildString {
+                        appendLine("✅ Done: AI Note Written in $pkg")
+                        if (createdNewTab) {
+                            appendLine("➕ Created New Note Tab: \"Class 10-A AI Report\"")
+                        }
+                        appendLine("✔️ Write Verified: $isVerified (${verifiedVal.length} chars)")
+                        appendLine("📄 Preview: \"${verifiedVal.lines().firstOrNull() ?: ""}\"")
+                    }.trim()
+                } else {
+                    "⚠️ Bot Alert: Target fields not found."
+                }
+            } catch (e: Exception) {
+                feedback = "❌ Bot Failed: ${e.localizedMessage?.take(40) ?: "Unknown error"}"
+            } finally {
+                updateStatus(feedback)
+            }
         }.start()
     }
 
     private fun performQuickFillDemo() {
-        val service = AttendanceAccessibilityService.instance
-        if (service == null) {
-            updateStatus("⚠️ Accessibility Service is disabled.")
-            return
-        }
-
-        val snapshot = service.getScreenSnapshot(preferExternal = true)
-        @Suppress("UNCHECKED_CAST")
-        val fields = (snapshot["editableFields"] as? List<Map<String, Any>>) ?: emptyList()
-        if (fields.isEmpty()) {
-            updateStatus("⚠️ No editable fields detected on this screen.")
-            return
-        }
-
-        // Smart default mapping based on detected field labels
-        val payload = mutableMapOf<String, String>()
-        val sampleValues = listOf("Ali Asghar", "1024", "Class 10-A", "+1555019283", "Present - Verified by Copilot")
-
-        for ((i, f) in fields.withIndex()) {
-            val lbl = (f["label"]?.toString() ?: "").lowercase()
-            val value = when {
-                lbl.contains("bform") || lbl.contains("b-form") || lbl.contains("cnic") -> "35201-1234567-1"
-                lbl.contains("emis") -> "EMIS-5421"
-                lbl.contains("present") || lbl.contains("attendance") || lbl.contains("days") -> "24"
-                lbl.contains("first") -> "Ali"
-                lbl.contains("last") || lbl.contains("surname") -> "Asghar"
-                lbl.contains("name") || lbl.contains("student") -> "Ali Asghar"
-                lbl.contains("company") || lbl.contains("class") || lbl.contains("grade") || lbl.contains("school") -> "Class 10-A"
-                lbl.contains("phone") || lbl.contains("mobile") || lbl.contains("tel") -> "0300-1234567"
-                lbl.contains("roll") || lbl.contains("id") || lbl.contains("number") -> "CS-2026-044"
-                lbl.contains("email") || lbl.contains("mail") -> "aliasgharinnocent@yahoo.com"
-                lbl.contains("note") || lbl.contains("status") || lbl.contains("remark") -> "Good Standing (96% Attendance)"
-                else -> sampleValues[i % sampleValues.size]
+        var feedback = "⚠️ Bot Alert: Target fields not found."
+        try {
+            val service = AttendanceAccessibilityService.instance
+            if (service == null) {
+                feedback = "⚠️ Bot Error: Accessibility Service is disabled."
+                return
             }
-            payload["#$i"] = value
-        }
 
-        val writeResults = service.writeFieldsWithVerification(payload, append = false)
-        val sb = StringBuilder("✨ Autofill & Write Verification:\n")
-        for ((k, v) in writeResults) {
+            val snapshot = service.getScreenSnapshot(preferExternal = true)
             @Suppress("UNCHECKED_CAST")
-            val info = v as? Map<String, Any> ?: continue
-            val lbl = info["matchedLabel"] ?: k
-            val written = info["verifiedValue"] ?: info["writtenValue"]
-            val ok = info["verified"] == true || info["success"] == true
-            sb.appendLine("${if (ok) "✅" else "❌"} [$lbl] = \"$written\"")
-        }
-        updateStatus(sb.toString().trim())
-    }
+            val fields = (snapshot["editableFields"] as? List<Map<String, Any>>) ?: emptyList()
+            if (fields.isEmpty()) {
+                feedback = "⚠️ Bot Alert: Target fields not found."
+                return
+            }
 
-    private fun executeUserInstructionOverApp(prompt: String) {
-        updateStatus("🤖 Running instruction on active app...\n\"$prompt\"")
-        runWithUnderlyingAppFocus {
-            val handler = onOverlayPromptHandler
-            if (handler != null) {
-                handler.invoke(prompt) { aiReply ->
-                    updateStatus("🤖 Gemini Copilot:\n$aiReply")
+            // Smart default mapping based on detected field labels
+            val payload = mutableMapOf<String, String>()
+            val sampleValues = listOf("Ali Asghar", "1024", "Class 10-A", "+1555019283", "Present - Verified by Copilot")
+
+            for ((i, f) in fields.withIndex()) {
+                val lbl = (f["label"]?.toString() ?: "").lowercase()
+                val value = when {
+                    lbl.contains("bform") || lbl.contains("b-form") || lbl.contains("cnic") -> "35201-1234567-1"
+                    lbl.contains("emis") -> "EMIS-5421"
+                    lbl.contains("present") || lbl.contains("attendance") || lbl.contains("days") -> "24"
+                    lbl.contains("first") -> "Ali"
+                    lbl.contains("last") || lbl.contains("surname") -> "Asghar"
+                    lbl.contains("name") || lbl.contains("student") -> "Ali Asghar"
+                    lbl.contains("company") || lbl.contains("class") || lbl.contains("grade") || lbl.contains("school") -> "Class 10-A"
+                    lbl.contains("phone") || lbl.contains("mobile") || lbl.contains("tel") -> "0300-1234567"
+                    lbl.contains("roll") || lbl.contains("id") || lbl.contains("number") -> "CS-2026-044"
+                    lbl.contains("email") || lbl.contains("mail") -> "aliasgharinnocent@yahoo.com"
+                    lbl.contains("note") || lbl.contains("status") || lbl.contains("remark") -> "Good Standing (96% Attendance)"
+                    else -> sampleValues[i % sampleValues.size]
                 }
-            } else {
-                // Offline / direct native parser fallback if Flutter engine is detached
-                val fallbackResult = executeDirectNativeInstruction(prompt)
-                updateStatus(fallbackResult)
+                payload["#$i"] = value
             }
-        }
-    }
 
-    private fun executeDirectNativeInstruction(prompt: String): String {
-        val service = AttendanceAccessibilityService.instance
-            ?: return "⚠️ Accessibility Service is not enabled."
-
-        val lower = prompt.lowercase()
-        if (lower.contains("inspect") || lower.contains("check") || lower.contains("read")) {
-            performNativeInspectAndVerify()
-            return statusTextView?.text?.toString() ?: "Inspected."
-        }
-
-        // Parse key=value or key: value pairs if present
-        val map = mutableMapOf<String, String>()
-        val pairRegex = Regex("([A-Za-z0-9_# ]+)[:=]\\s*([^,\\n]+)")
-        for (m in pairRegex.findAll(prompt)) {
-            val k = m.groupValues[1].trim()
-            val v = m.groupValues[2].trim()
-            if (k.isNotEmpty() && v.isNotEmpty()) {
-                map[k] = v
-            }
-        }
-
-        if (map.isNotEmpty()) {
-            val res = service.writeFieldsWithVerification(map)
-            return "✅ Executed field writes: $res"
-        }
-
-        // 0. App Launch commands in human language (e.g. "open contacts", "launch browser", "start chrome")
-        val openPrefixes = listOf("open ", "launch ", "start ", "go to ")
-        for (pfx in openPrefixes) {
-            if (lower.startsWith(pfx)) {
-                val appTarget = prompt.substring(pfx.length).trim()
-                val ok = service.launchAppByPackageOrName(appTarget)
-                return if (ok) "🚀 Launched $appTarget" else "⚠️ Could not open $appTarget"
-            }
-        }
-
-        // 1. Natural language field extraction (Name, Phone, Email, B-Form/CNIC, etc.)
-        val humanFields = mutableMapOf<String, String>()
-
-        // Phone number matching (Pakistani or international/standard format)
-        val phoneMatch = Regex("""(?:\+?92|0)?3[0-9]{2}[-\s]?[0-9]{7}|(?:\+?1|0)?[0-9]{10,11}""").find(prompt)
-        if (phoneMatch != null) {
-            humanFields["phone"] = phoneMatch.value.trim()
-        }
-
-        // Email address matching
-        val emailMatch = Regex("""[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}""").find(prompt)
-        if (emailMatch != null) {
-            humanFields["email"] = emailMatch.value.trim()
-        }
-
-        // CNIC / B-Form matching
-        val cnicMatch = Regex("""[0-9]{5}-?[0-9]{7}-?[0-9]""").find(prompt)
-        if (cnicMatch != null) {
-            humanFields["bForm"] = cnicMatch.value.trim()
-            humanFields["cnic"] = cnicMatch.value.trim()
-        }
-
-        // Name extraction from natural phrases ("for Ali Asghar", "name is Ali", "name Ali", "student Ali Asghar")
-        val nameMatch = Regex("""(?:name\s*(?:is|:)?|for|student\s*(?:is|:)?)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)""").find(prompt)
-            ?: Regex("""(?:put|enter|write)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s+(?:as|in|for)\s+(?:name|contact)""").find(prompt)
-        if (nameMatch != null) {
-            val fullName = nameMatch.groupValues[1].trim()
-            if (fullName.contains(" ")) {
-                humanFields["firstName"] = fullName.substringBefore(" ")
-                humanFields["lastName"] = fullName.substringAfter(" ")
-            } else {
-                humanFields["firstName"] = fullName
-                humanFields["studentName"] = fullName
-            }
-        }
-
-        if (humanFields.isNotEmpty()) {
-            val res = service.writeFieldsWithVerification(humanFields)
-            val sb = StringBuilder("✨ Human Language Auto-Fill:\n")
-            for ((k, v) in res) {
+            val writeResults = service.writeFieldsWithVerification(payload, append = false)
+            val sb = StringBuilder("✅ Done: Autofill & Write Verification:\n")
+            var anyOk = false
+            for ((k, v) in writeResults) {
                 @Suppress("UNCHECKED_CAST")
                 val info = v as? Map<String, Any> ?: continue
                 val lbl = info["matchedLabel"] ?: k
                 val written = info["verifiedValue"] ?: info["writtenValue"]
                 val ok = info["verified"] == true || info["success"] == true
+                if (ok) anyOk = true
                 sb.appendLine("${if (ok) "✅" else "❌"} [$lbl] = \"$written\"")
             }
-            if (lower.contains("save") || lower.contains("done") || lower.contains("submit")) {
-                mainHandler.postDelayed({
-                    service.clickElement("Save") || service.clickElement("Done") || service.clickElement("Submit")
-                }, 400L)
-            }
-            return sb.toString().trim()
+            feedback = if (anyOk) sb.toString().trim() else "⚠️ Bot Alert: Target fields not found."
+        } catch (e: Exception) {
+            feedback = "❌ Bot Failed: ${e.localizedMessage?.take(40) ?: "Unknown error"}"
+        } finally {
+            updateStatus(feedback)
         }
+    }
 
-        // 1. Direct text typing into whatever third-party app is currently open
-        val writePrefixes = listOf("type ", "input ", "write ", "enter ", "fill ", "paste ")
-        for (pfx in writePrefixes) {
-            if (lower.startsWith(pfx)) {
-                val value = prompt.substring(pfx.length).trim().removeSurrounding("\"").removeSurrounding("'")
-                val writeRes = service.writeFieldsWithVerification(mapOf("#0" to value))
-                val sb = StringBuilder("✨ Typed into Active App:\n")
-                for ((k, v) in writeRes) {
+    private fun executeUserInstructionOverApp(prompt: String) {
+        promptInput?.setText("")
+        addChatMessage("You", prompt)
+        updateStatus("🤖 Running instruction on active app...\n\"$prompt\"")
+        runWithUnderlyingAppFocus {
+            try {
+                val handler = onOverlayPromptHandler
+                if (handler != null) {
+                    handler.invoke(prompt) { aiReply ->
+                        val msg = if (aiReply.isNotBlank()) aiReply else "✅ Done: Command completed."
+                        updateStatusBubble(msg)
+                    }
+                } else {
+                    // Offline / direct native parser fallback if Flutter engine is detached
+                    val fallbackResult = executeDirectNativeInstruction(prompt)
+                    updateStatusBubble(fallbackResult)
+                }
+            } catch (e: Exception) {
+                updateStatusBubble("❌ Bot Failed: ${e.localizedMessage?.take(40) ?: "Unknown error"}")
+            }
+        }
+    }
+
+    private fun executeDirectNativeInstruction(prompt: String): String {
+        var feedback = "✅ Command processed."
+        try {
+            val service = AttendanceAccessibilityService.instance
+            if (service == null) {
+                feedback = "⚠️ Bot Error: Accessibility Service is not enabled."
+                return feedback
+            }
+
+            val lower = prompt.lowercase()
+            if (lower.contains("inspect") || lower.contains("check") || lower.contains("read")) {
+                performNativeInspectAndVerify()
+                feedback = panelStatusTextView?.text?.toString() ?: "✅ Done: Inspected screen."
+                return feedback
+            }
+
+            // Parse key=value or key: value pairs if present
+            val map = mutableMapOf<String, String>()
+            val pairRegex = Regex("([A-Za-z0-9_# ]+)[:=]\\s*([^,\\n]+)")
+            for (m in pairRegex.findAll(prompt)) {
+                val k = m.groupValues[1].trim()
+                val v = m.groupValues[2].trim()
+                if (k.isNotEmpty() && v.isNotEmpty()) {
+                    map[k] = v
+                }
+            }
+
+            if (map.isNotEmpty()) {
+                val res = service.writeFieldsWithVerification(map)
+                val anyOk = res.values.any { (it as? Map<*, *>)?.get("success") == true }
+                feedback = if (anyOk) "✅ Done: Field writes completed." else "⚠️ Bot Alert: Target fields not found."
+                return feedback
+            }
+
+            // 0. App Launch commands in human language (e.g. "open contacts", "launch browser", "start chrome")
+            val openPrefixes = listOf("open ", "launch ", "start ", "go to ")
+            for (pfx in openPrefixes) {
+                if (lower.startsWith(pfx)) {
+                    val appTarget = prompt.substring(pfx.length).trim()
+                    service.launchOrResolveApp(appTarget, this)
+                    return "⏳ Processing launch for $appTarget..."
+                }
+            }
+
+            // 1. Natural language field extraction (Name, Phone, Email, B-Form/CNIC, etc.)
+            val humanFields = mutableMapOf<String, String>()
+
+            // Phone number matching (Pakistani or international/standard format)
+            val phoneMatch = Regex("""(?:\+?92|0)?3[0-9]{2}[-\s]?[0-9]{7}|(?:\+?1|0)?[0-9]{10,11}""").find(prompt)
+            if (phoneMatch != null) {
+                humanFields["phone"] = phoneMatch.value.trim()
+            }
+
+            // Email address matching
+            val emailMatch = Regex("""[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}""").find(prompt)
+            if (emailMatch != null) {
+                humanFields["email"] = emailMatch.value.trim()
+            }
+
+            // CNIC / B-Form matching
+            val cnicMatch = Regex("""[0-9]{5}-?[0-9]{7}-?[0-9]""").find(prompt)
+            if (cnicMatch != null) {
+                humanFields["bForm"] = cnicMatch.value.trim()
+                humanFields["cnic"] = cnicMatch.value.trim()
+            }
+
+            // Name extraction from natural phrases ("for Ali Asghar", "name is Ali", "name Ali", "student Ali Asghar")
+            val nameMatch = Regex("""(?:name\s*(?:is|:)?|for|student\s*(?:is|:)?)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)""").find(prompt)
+                ?: Regex("""(?:put|enter|write)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s+(?:as|in|for)\s+(?:name|contact)""").find(prompt)
+            if (nameMatch != null) {
+                val fullName = nameMatch.groupValues[1].trim()
+                if (fullName.contains(" ")) {
+                    humanFields["firstName"] = fullName.substringBefore(" ")
+                    humanFields["lastName"] = fullName.substringAfter(" ")
+                } else {
+                    humanFields["firstName"] = fullName
+                    humanFields["studentName"] = fullName
+                }
+            }
+
+            if (humanFields.isNotEmpty()) {
+                val res = service.writeFieldsWithVerification(humanFields)
+                val sb = StringBuilder("✅ Done: Auto-Fill:\n")
+                var anyOk = false
+                for ((k, v) in res) {
                     @Suppress("UNCHECKED_CAST")
                     val info = v as? Map<String, Any> ?: continue
                     val lbl = info["matchedLabel"] ?: k
                     val written = info["verifiedValue"] ?: info["writtenValue"]
                     val ok = info["verified"] == true || info["success"] == true
+                    if (ok) anyOk = true
                     sb.appendLine("${if (ok) "✅" else "❌"} [$lbl] = \"$written\"")
                 }
-                return sb.toString().trim()
+                if (lower.contains("save") || lower.contains("done") || lower.contains("submit")) {
+                    mainHandler.postDelayed({
+                        service.clickElement("Save") || service.clickElement("Done") || service.clickElement("Submit")
+                    }, 400L)
+                }
+                feedback = if (anyOk) sb.toString().trim() else "⚠️ Bot Alert: Target fields not found."
+                return feedback
             }
-        }
 
-        // 2. Navigation commands in third party apps
-        if (lower.contains("scroll down")) {
-            val ok = service.scrollScreen("down")
-            return if (ok) "⬇️ Scrolled down." else "⚠️ Could not scroll."
-        }
-        if (lower.contains("scroll up")) {
-            val ok = service.scrollScreen("up")
-            return if (ok) "⬆️ Scrolled up." else "⚠️ Could not scroll."
-        }
-        if (lower.equals("back", ignoreCase = true) || lower.startsWith("go back")) {
-            service.performSystemNavigation("BACK")
-            return "◀ Navigated Back."
-        }
+            // 1. Direct text typing into whatever third-party app is currently open
+            val writePrefixes = listOf("type ", "input ", "write ", "enter ", "fill ", "paste ")
+            for (pfx in writePrefixes) {
+                if (lower.startsWith(pfx)) {
+                    val value = prompt.substring(pfx.length).trim().removeSurrounding("\"").removeSurrounding("'")
+                    val writeRes = service.writeFieldsWithVerification(mapOf("#0" to value))
+                    val sb = StringBuilder("✅ Done: Typed into Active App:\n")
+                    var anyOk = false
+                    for ((k, v) in writeRes) {
+                        @Suppress("UNCHECKED_CAST")
+                        val info = v as? Map<String, Any> ?: continue
+                        val lbl = info["matchedLabel"] ?: k
+                        val written = info["verifiedValue"] ?: info["writtenValue"]
+                        val ok = info["verified"] == true || info["success"] == true
+                        if (ok) anyOk = true
+                        sb.appendLine("${if (ok) "✅" else "❌"} [$lbl] = \"$written\"")
+                    }
+                    feedback = if (anyOk) sb.toString().trim() else "⚠️ Bot Alert: Target fields not found."
+                    return feedback
+                }
+            }
 
-        if (lower.startsWith("click ") || lower.startsWith("tap ") || lower.startsWith("press ")) {
-            val target = prompt.substringAfter(" ").trim()
-            val ok = service.clickElement(target)
-            return if (ok) "✅ Clicked '$target'" else "⚠️ Could not find '$target'"
-        }
+            // 2. Navigation commands in third party apps
+            if (lower.contains("scroll down")) {
+                val ok = service.scrollScreen("down")
+                feedback = if (ok) "✅ Done: Scrolled down." else "⚠️ Bot Alert: Could not scroll."
+                return feedback
+            }
+            if (lower.contains("scroll up")) {
+                val ok = service.scrollScreen("up")
+                feedback = if (ok) "✅ Done: Scrolled up." else "⚠️ Bot Alert: Could not scroll."
+                return feedback
+            }
+            if (lower.equals("back", ignoreCase = true) || lower.startsWith("go back")) {
+                val ok = service.performSystemNavigation("BACK")
+                feedback = if (ok) "✅ Done: Navigated Back." else "⚠️ Bot Error: Could not navigate Back."
+                return feedback
+            }
 
-        performQuickFillDemo()
-        return statusTextView?.text?.toString() ?: "Done."
+            if (lower.startsWith("click ") || lower.startsWith("tap ") || lower.startsWith("press ")) {
+                val target = prompt.substringAfter(" ").trim()
+                val ok = service.clickElement(target)
+                feedback = if (ok) "✅ Done: Clicked '$target'." else "⚠️ Bot Alert: Target '$target' not found."
+                return feedback
+            }
+
+            performQuickFillDemo()
+            feedback = panelStatusTextView?.text?.toString() ?: "✅ Done: Action completed."
+            return feedback
+        } catch (e: Exception) {
+            feedback = "❌ Bot Failed: ${e.localizedMessage?.take(40) ?: "Unknown error"}"
+            return feedback
+        } finally {
+            updateStatus(feedback)
+        }
     }
 
     private fun createNotificationChannel() {
@@ -880,11 +1233,216 @@ class FloatingBubbleService : Service() {
         }
     }
 
+    private var activeChoiceDialogView: View? = null
+
+    private fun renderOverlayChoiceCard(
+        title: String,
+        options: List<ChoiceOption>,
+        onSelect: (Int) -> Unit
+    ) {
+        val wm = windowManager ?: (getSystemService(Context.WINDOW_SERVICE) as WindowManager)
+
+        // Dismiss previous dialog if one was open
+        activeChoiceDialogView?.let {
+            try {
+                wm.removeView(it)
+            } catch (_: Exception) {}
+            activeChoiceDialogView = null
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val padH = dp(18)
+            val padV = dp(16)
+            setPadding(padH, padV, padH, padV)
+            val bg = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(16).toFloat()
+                setColor(Color.parseColor("#1E1E2E"))
+                setStroke(dp(1), Color.parseColor("#38BDF8"))
+            }
+            background = bg
+            elevation = dp(16).toFloat()
+        }
+
+        val header = TextView(this).apply {
+            text = title
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, 0, 0, dp(12))
+        }
+        container.addView(header)
+
+        val screenWidth = resources.displayMetrics.widthPixels
+        val dialogWidth = (screenWidth * 0.88).toInt()
+
+        val params = WindowManager.LayoutParams(
+            dialogWidth,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            overlayLayoutType(),
+            WindowManager.LayoutParams.FLAG_DIM_BEHIND or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.CENTER
+            dimAmount = 0.55f
+        }
+
+        val scroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                weight = 1f
+            }
+            isVerticalScrollBarEnabled = true
+        }
+
+        val listLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        // Add one clickable row per candidate option with icon, title and subtitle
+        options.forEachIndexed { index, option ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                val rowBg = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = dp(10).toFloat()
+                    setColor(Color.parseColor("#2E2E3E"))
+                    setStroke(dp(1), Color.parseColor("#4B5563"))
+                }
+                background = rowBg
+                val padH = dp(12)
+                val padV = dp(10)
+                setPadding(padH, padV, padH, padV)
+                isClickable = true
+                isFocusable = true
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = dp(8)
+                }
+
+                // App / node icon on the left (32dp x 32dp, 12dp end margin)
+                if (option.icon != null) {
+                    val iconView = ImageView(context).apply {
+                        setImageDrawable(option.icon)
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        layoutParams = LinearLayout.LayoutParams(dp(32), dp(32)).apply {
+                            marginEnd = dp(12)
+                        }
+                    }
+                    addView(iconView)
+                }
+
+                // Text column: label + optional subtitle
+                val textCol = LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+
+                val titleTv = TextView(context).apply {
+                    text = option.label
+                    setTextColor(Color.WHITE)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f)
+                    setTypeface(typeface, Typeface.BOLD)
+                }
+                textCol.addView(titleTv)
+
+                if (!option.subtitle.isNullOrBlank()) {
+                    val subTv = TextView(context).apply {
+                        text = option.subtitle
+                        setTextColor(Color.parseColor("#94A3B8"))
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                        ellipsize = TextUtils.TruncateAt.END
+                        maxLines = 2
+                        setPadding(0, dp(2), 0, 0)
+                    }
+                    textCol.addView(subTv)
+                }
+                addView(textCol)
+
+                setOnClickListener {
+                    try {
+                        wm.removeView(container)
+                    } catch (_: Exception) {}
+                    if (activeChoiceDialogView == container) {
+                        activeChoiceDialogView = null
+                    }
+                    onSelect(index)
+                }
+            }
+            listLayout.addView(row)
+        }
+        scroll.addView(listLayout)
+        container.addView(scroll)
+
+        // Cancel option so the user is never stuck
+        val cancelBtn = Button(this).apply {
+            text = "Cancel"
+            isAllCaps = false
+            setTextColor(Color.parseColor("#EF4444"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            val cancelBg = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(8).toFloat()
+                setColor(Color.parseColor("#374151"))
+            }
+            background = cancelBg
+            val pad = dp(8)
+            setPadding(pad, pad, pad, pad)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(4)
+            }
+            setOnClickListener {
+                try {
+                    wm.removeView(container)
+                } catch (_: Exception) {}
+                if (activeChoiceDialogView == container) {
+                    activeChoiceDialogView = null
+                }
+                updateStatusBubble("🚫 Action cancelled.")
+            }
+        }
+        container.addView(cancelBtn)
+
+        activeChoiceDialogView = container
+        try {
+            wm.addView(container, params)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
-        if (currentInstance == this) {
-            currentInstance = null
+        if (instance == this) {
+            instance = null
+        }
+        try {
+            tts?.stop()
+            tts?.shutdown()
+        } catch (_: Exception) {}
+        tts = null
+        ttsReady = false
+        activeChoiceDialogView?.let {
+            try {
+                windowManager?.removeView(it)
+            } catch (_: Exception) {}
+            activeChoiceDialogView = null
+        }
+        statusTextView?.let {
+            try {
+                it.removeCallbacksAndMessages(null)
+                windowManager?.removeView(it)
+            } catch (_: Exception) {}
         }
         floatingBubbleView?.let {
             try {
