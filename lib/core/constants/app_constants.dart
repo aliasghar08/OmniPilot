@@ -58,16 +58,15 @@ class AppConstants {
     'Search Google for Quantum Computing breakthroughs and summarize',
     'Search Google for Artificial Intelligence and write into Notes app',
     'What is Photosynthesis and how does it work?',
-    'Fill period attendance for Zayd Ahmed: Full Semester, Probation Warning, 35/48 present, makeup required',
-    'Fill period attendance for Sara Malik: Mid-Term Period, Medical Exemption, 22/32 present, 8 approved leaves',
+    'Inspect active screen fields and readable texts',
     'Check existing writes in the active external app',
+    'Scroll down and tap the Submit button',
   ];
 
   static const String welcomeMessage =
       '👋 Hello! I am **OmniPilot** — your Wide-Purpose Android AI Copilot.\n\n'
       '• **🌐 Live Google & Web Search**: Ask me any question (science, tech, news, history, coding) and I will fetch live info from Google Search, Google News, and Wikipedia.\n'
       '• **📝 Google Research → External Apps**: Ask me to research any topic on Google and automatically write it into **Fossify Notes**, Docs, or any open app!\n'
-      '• **📋 Complex Period Attendance Form**: I can populate Dropdowns, Radio Buttons, Checkboxes, Switches, Date Ranges, Sliders, and Period Counts.\n'
-      '• **🤖 Universal Android Control**: Turn on the Floating Bubble to command me directly over any screen!';
+      '• **🤖 Universal Android Control**: Turn on the Sliding Menu to command me directly over any third-party app with full click, text-fill, and gesture automation!';
 }
 
