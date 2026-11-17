@@ -471,6 +471,53 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
 
+                    "getAuthorizedApps" -> {
+                        val apps = AppPermissionManager.getAuthorizedApps(this@MainActivity)
+                        result.success(apps)
+                    }
+
+                    "revokeAppPermission" -> {
+                        val pkg = call.argument<String>("packageName") ?: ""
+                        val ok = AppPermissionManager.revokePermission(this@MainActivity, pkg)
+                        result.success(ok)
+                    }
+
+                    "requestAppPermissionPopup" -> {
+                        val pkg = call.argument<String>("packageName") ?: ""
+                        val reason = call.argument<String>("reason") ?: "automation access"
+                        val service = AttendanceAccessibilityService.instance
+                        if (service != null) {
+                            service.requestAppPermissionIfNeeded(
+                                packageName = pkg,
+                                actionDescription = reason,
+                                onGranted = { result.success(true) },
+                                onDenied = { result.success(false) }
+                            )
+                        } else {
+                            val (appLabel, appIcon) = AppPermissionManager.resolveAppDetails(this@MainActivity, pkg)
+                            FloatingBubbleService.showAppPermissionPopup(
+                                appLabel = appLabel,
+                                packageName = pkg,
+                                appIcon = appIcon,
+                                requestedScope = reason
+                            ) { decision ->
+                                when (decision) {
+                                    PermissionDecision.ALLOW_ALWAYS -> {
+                                        AppPermissionManager.allowPermanently(this@MainActivity, pkg)
+                                        result.success(true)
+                                    }
+                                    PermissionDecision.ALLOW_ONCE -> {
+                                        AppPermissionManager.allowForSession(pkg)
+                                        result.success(true)
+                                    }
+                                    PermissionDecision.DENY -> {
+                                        result.success(false)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     "openGoogleSearchInBrowser" -> {
                         try {
                             val query = call.argument<String>("query") ?: ""

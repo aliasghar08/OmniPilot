@@ -102,4 +102,42 @@ void main() {
     expect(speakSuccess, isTrue);
     expect(calls['speakTts'], {'text': 'Testing OmniPilot voice output'});
   });
+
+  test('Per-app permissions bridge: getAuthorizedApps, revokeAppPermission, requestAppPermissionPopup', () async {
+    final calls = <String, dynamic>{};
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      calls[methodCall.method] = methodCall.arguments;
+      if (methodCall.method == 'getAuthorizedApps') {
+        return [
+          {'packageName': 'com.android.chrome', 'label': 'Chrome'},
+          {'packageName': 'com.whatsapp', 'label': 'WhatsApp'},
+        ];
+      } else if (methodCall.method == 'revokeAppPermission') {
+        return true;
+      } else if (methodCall.method == 'requestAppPermissionPopup') {
+        return true;
+      }
+      return null;
+    });
+
+    final apps = await AccessibilityBridge.getAuthorizedApps();
+    expect(apps.length, 2);
+    expect(apps[0]['label'], 'Chrome');
+    expect(apps[1]['packageName'], 'com.whatsapp');
+
+    final revokeSuccess = await AccessibilityBridge.revokeAppPermission('com.android.chrome');
+    expect(revokeSuccess, isTrue);
+    expect(calls['revokeAppPermission'], {'packageName': 'com.android.chrome'});
+
+    final requestSuccess = await AccessibilityBridge.requestAppPermissionPopup(
+      'org.fossify.notes',
+      reason: 'Write attendance notes',
+    );
+    expect(requestSuccess, isTrue);
+    expect(calls['requestAppPermissionPopup'], {
+      'packageName': 'org.fossify.notes',
+      'reason': 'Write attendance notes',
+    });
+  });
 }

@@ -562,6 +562,52 @@ class AccessibilityBridge {
     }
   }
 
+  /// Returns a list of all permanently authorized third-party apps [{packageName, label}].
+  static Future<List<Map<String, String>>> getAuthorizedApps() async {
+    try {
+      final List<dynamic>? list = await _channel.invokeListMethod<dynamic>('getAuthorizedApps');
+      if (list == null) return [];
+      return list.map((item) {
+        final map = item as Map<dynamic, dynamic>;
+        return {
+          'packageName': map['packageName']?.toString() ?? '',
+          'label': map['label']?.toString() ?? '',
+        };
+      }).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Revokes access permission for a given third-party app package.
+  static Future<bool> revokeAppPermission(String packageName) async {
+    try {
+      final bool? ok = await _channel.invokeMethod<bool>(
+        'revokeAppPermission',
+        {'packageName': packageName},
+      );
+      return ok ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Triggers the native permission request popup for a specific app package.
+  static Future<bool> requestAppPermissionPopup(
+    String packageName, {
+    String reason = 'automation access',
+  }) async {
+    try {
+      final bool? ok = await _channel.invokeMethod<bool>(
+        'requestAppPermissionPopup',
+        {'packageName': packageName, 'reason': reason},
+      );
+      return ok ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Map<String, dynamic> _deepCastMap(Map<dynamic, dynamic> source) {
     final result = <String, dynamic>{};
     source.forEach((key, value) {

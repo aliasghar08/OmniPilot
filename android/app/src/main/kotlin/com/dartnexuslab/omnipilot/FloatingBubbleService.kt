@@ -42,6 +42,12 @@ data class ChoiceOption(
     val icon: Drawable? = null
 )
 
+enum class PermissionDecision {
+    ALLOW_ALWAYS,
+    ALLOW_ONCE,
+    DENY
+}
+
 class FloatingBubbleService : Service() {
 
     private var windowManager: WindowManager? = null
@@ -185,6 +191,20 @@ class FloatingBubbleService : Service() {
             instance?.let { service ->
                 Handler(Looper.getMainLooper()).post {
                     service.renderOverlayChoiceCard(title, options, onSelect)
+                }
+            }
+        }
+
+        fun showAppPermissionPopup(
+            appLabel: String,
+            packageName: String,
+            appIcon: Drawable?,
+            requestedScope: String,
+            onDecision: (PermissionDecision) -> Unit
+        ) {
+            instance?.let { service ->
+                Handler(Looper.getMainLooper()).post {
+                    service.renderAppPermissionDialog(appLabel, packageName, appIcon, requestedScope, onDecision)
                 }
             }
         }
@@ -1471,6 +1491,234 @@ class FloatingBubbleService : Service() {
             }
         }
         container.addView(cancelBtn)
+
+        activeChoiceDialogView = container
+        try {
+            wm.addView(container, params)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun renderAppPermissionDialog(
+        appLabel: String,
+        packageName: String,
+        appIcon: Drawable?,
+        requestedScope: String,
+        onDecision: (PermissionDecision) -> Unit
+    ) {
+        val wm = windowManager ?: (getSystemService(Context.WINDOW_SERVICE) as WindowManager)
+
+        // Dismiss previous dialog if one was open
+        activeChoiceDialogView?.let {
+            try {
+                wm.removeView(it)
+            } catch (_: Exception) {}
+            activeChoiceDialogView = null
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val padH = dp(20)
+            val padV = dp(18)
+            setPadding(padH, padV, padH, padV)
+            val bg = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(16).toFloat()
+                setColor(Color.parseColor("#1E1E2E"))
+                setStroke(dp(1), Color.parseColor("#38BDF8"))
+            }
+            background = bg
+            elevation = dp(16).toFloat()
+        }
+
+        // 1. Header Badge: "🔐 App Access Request"
+        val header = TextView(this).apply {
+            text = "🔐 App Access Request"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, 0, 0, dp(14))
+        }
+        container.addView(header)
+
+        // 2. Target App Row (Icon + App Label + Package)
+        val appRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(14))
+        }
+
+        val iconView = ImageView(this).apply {
+            if (appIcon != null) {
+                setImageDrawable(appIcon)
+            } else {
+                setImageResource(R.mipmap.ic_launcher)
+            }
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply {
+                marginEnd = dp(12)
+            }
+        }
+        appRow.addView(iconView)
+
+        val appTextCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val labelTv = TextView(this).apply {
+            text = appLabel
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTypeface(typeface, Typeface.BOLD)
+        }
+        val pkgTv = TextView(this).apply {
+            text = packageName
+            setTextColor(Color.parseColor("#94A3B8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            ellipsize = TextUtils.TruncateAt.END
+            maxLines = 1
+        }
+        appTextCol.addView(labelTv)
+        appTextCol.addView(pkgTv)
+        appRow.addView(appTextCol)
+        container.addView(appRow)
+
+        // 3. Scope Description Box
+        val scopeBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val boxBg = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(10).toFloat()
+                setColor(Color.parseColor("#2A2A3C"))
+                setStroke(dp(1), Color.parseColor("#3E3E52"))
+            }
+            background = boxBg
+            val pad = dp(12)
+            setPadding(pad, pad, pad, pad)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(16)
+            }
+        }
+        val scopeTv = TextView(this).apply {
+            text = "OmniPilot is requesting permission to view screen fields and automate actions in $appLabel.\n\nPurpose: $requestedScope"
+            setTextColor(Color.parseColor("#E2E8F0"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+        }
+        scopeBox.addView(scopeTv)
+        container.addView(scopeBox)
+
+        // Dismiss helper
+        val dismissDialog = {
+            try {
+                wm.removeView(container)
+            } catch (_: Exception) {}
+            if (activeChoiceDialogView == container) {
+                activeChoiceDialogView = null
+            }
+        }
+
+        // 4. Action Buttons: Allow Always, Allow Once, Deny
+        val buttonRow = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        val allowAlwaysBtn = Button(this).apply {
+            text = "Allow Always"
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTypeface(typeface, Typeface.BOLD)
+            val btnBg = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(8).toFloat()
+                setColor(Color.parseColor("#2563EB")) // Primary blue
+            }
+            background = btnBg
+            val pad = dp(10)
+            setPadding(pad, pad, pad, pad)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(8)
+            }
+            setOnClickListener {
+                dismissDialog()
+                onDecision(PermissionDecision.ALLOW_ALWAYS)
+            }
+        }
+
+        val allowOnceBtn = Button(this).apply {
+            text = "Allow Once"
+            isAllCaps = false
+            setTextColor(Color.parseColor("#E2E8F0"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            val btnBg = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(8).toFloat()
+                setColor(Color.parseColor("#374151")) // Slate
+            }
+            background = btnBg
+            val pad = dp(9)
+            setPadding(pad, pad, pad, pad)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(8)
+            }
+            setOnClickListener {
+                dismissDialog()
+                onDecision(PermissionDecision.ALLOW_ONCE)
+            }
+        }
+
+        val denyBtn = Button(this).apply {
+            text = "Deny"
+            isAllCaps = false
+            setTextColor(Color.parseColor("#EF4444"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            val btnBg = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(8).toFloat()
+                setColor(Color.parseColor("#1F2937"))
+                setStroke(dp(1), Color.parseColor("#7F1D1D"))
+            }
+            background = btnBg
+            val pad = dp(8)
+            setPadding(pad, pad, pad, pad)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener {
+                dismissDialog()
+                onDecision(PermissionDecision.DENY)
+            }
+        }
+
+        buttonRow.addView(allowAlwaysBtn)
+        buttonRow.addView(allowOnceBtn)
+        buttonRow.addView(denyBtn)
+        container.addView(buttonRow)
+
+        val screenWidth = resources.displayMetrics.widthPixels
+        val dialogWidth = (screenWidth * 0.90).toInt()
+
+        val params = WindowManager.LayoutParams(
+            dialogWidth,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            overlayLayoutType(),
+            WindowManager.LayoutParams.FLAG_DIM_BEHIND or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.CENTER
+            dimAmount = 0.55f
+        }
 
         activeChoiceDialogView = container
         try {

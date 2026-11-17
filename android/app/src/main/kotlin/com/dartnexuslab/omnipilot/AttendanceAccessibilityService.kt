@@ -178,6 +178,10 @@ class AttendanceAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val pkg = event?.packageName?.toString() ?: return
+        if (pkg.contains("permissioncontroller", ignoreCase = true)) {
+            sendBotFeedback("⚠️ System permission prompt detected—please tap Allow on screen to continue")
+            return
+        }
         if (pkg.isNotEmpty() && !ignoredPackages.contains(pkg)) {
             lastExternalPackage = pkg
         }
@@ -775,7 +779,7 @@ class AttendanceAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun sendBotFeedback(message: String) {
+    fun sendBotFeedback(message: String) {
         // 1. Update FloatingBubbleService HUD/Toast immediately
         FloatingBubbleService.updateStatusBubble(message)
 
@@ -785,6 +789,48 @@ class AttendanceAccessibilityService : AccessibilityService() {
                 MainActivity.methodChannel?.invokeMethod("onBotFeedback", message)
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to invoke onBotFeedback: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Checks if access to [packageName] is granted. If not, renders the interactive overlay
+     * permission popup over the screen and awaits user decision before executing [onGranted].
+     */
+    fun requestAppPermissionIfNeeded(
+        packageName: String,
+        actionDescription: String,
+        onGranted: () -> Unit,
+        onDenied: () -> Unit = {}
+    ) {
+        if (AppPermissionManager.isPackageAllowed(this, packageName)) {
+            onGranted()
+            return
+        }
+
+        val (appLabel, appIcon) = AppPermissionManager.resolveAppDetails(this, packageName)
+
+        FloatingBubbleService.showAppPermissionPopup(
+            appLabel = appLabel,
+            packageName = packageName,
+            appIcon = appIcon,
+            requestedScope = actionDescription
+        ) { decision ->
+            when (decision) {
+                PermissionDecision.ALLOW_ALWAYS -> {
+                    AppPermissionManager.allowPermanently(this, packageName)
+                    sendBotFeedback("✅ Permission saved for $appLabel.")
+                    onGranted()
+                }
+                PermissionDecision.ALLOW_ONCE -> {
+                    AppPermissionManager.allowForSession(packageName)
+                    sendBotFeedback("✅ Granted one-time access for $appLabel.")
+                    onGranted()
+                }
+                PermissionDecision.DENY -> {
+                    sendBotFeedback("🚫 Access denied for $appLabel.")
+                    onDenied()
+                }
             }
         }
     }
@@ -813,6 +859,26 @@ class AttendanceAccessibilityService : AccessibilityService() {
         append: Boolean = false,
         broadcastFeedback: Boolean = true
     ): Map<String, Any> {
+        val activePkg = (rootInActiveWindow?.packageName?.toString() ?: lastExternalPackage).orEmpty()
+        if (activePkg.contains("permissioncontroller", ignoreCase = true)) {
+            val msg = "⚠️ System permission prompt detected—please tap Allow on screen to continue"
+            sendBotFeedback(msg)
+            return emptyMap()
+        }
+        if (activePkg.isNotEmpty() && !AppPermissionManager.isPackageAllowed(this, activePkg)) {
+            requestAppPermissionIfNeeded(
+                packageName = activePkg,
+                actionDescription = "Autofill fields in $activePkg",
+                onGranted = {
+                    writeFieldsWithVerification(fieldMappings, append, broadcastFeedback)
+                },
+                onDenied = {
+                    sendBotFeedback("🚫 Cannot fill fields: Permission denied for $activePkg.")
+                }
+            )
+            return emptyMap()
+        }
+
         val results = mutableMapOf<String, Any>()
         var feedback = "✅ Done: Autofill completed."
         try {
@@ -1230,6 +1296,26 @@ class AttendanceAccessibilityService : AccessibilityService() {
     @JvmOverloads
     fun clickElement(targetLabel: String, broadcastFeedback: Boolean = true): Boolean {
         val trimmed = targetLabel.trim()
+        val activePkg = (rootInActiveWindow?.packageName?.toString() ?: lastExternalPackage).orEmpty()
+        if (activePkg.contains("permissioncontroller", ignoreCase = true)) {
+            val msg = "⚠️ System permission prompt detected—please tap Allow on screen to continue"
+            sendBotFeedback(msg)
+            return false
+        }
+        if (activePkg.isNotEmpty() && !AppPermissionManager.isPackageAllowed(this, activePkg)) {
+            requestAppPermissionIfNeeded(
+                packageName = activePkg,
+                actionDescription = "Tap '$trimmed' in $activePkg",
+                onGranted = {
+                    clickElement(targetLabel, broadcastFeedback)
+                },
+                onDenied = {
+                    sendBotFeedback("🚫 Cannot tap '$trimmed': Permission denied for $activePkg.")
+                }
+            )
+            return false
+        }
+
         var clickedSuccess = false
         var feedback = "✅ Done: Click '$trimmed' completed."
         try {
@@ -1332,6 +1418,26 @@ class AttendanceAccessibilityService : AccessibilityService() {
     @JvmOverloads
     fun longClickElement(targetLabel: String, broadcastFeedback: Boolean = true): Boolean {
         val trimmed = targetLabel.trim()
+        val activePkg = (rootInActiveWindow?.packageName?.toString() ?: lastExternalPackage).orEmpty()
+        if (activePkg.contains("permissioncontroller", ignoreCase = true)) {
+            val msg = "⚠️ System permission prompt detected—please tap Allow on screen to continue"
+            sendBotFeedback(msg)
+            return false
+        }
+        if (activePkg.isNotEmpty() && !AppPermissionManager.isPackageAllowed(this, activePkg)) {
+            requestAppPermissionIfNeeded(
+                packageName = activePkg,
+                actionDescription = "Long press '$trimmed' in $activePkg",
+                onGranted = {
+                    longClickElement(targetLabel, broadcastFeedback)
+                },
+                onDenied = {
+                    sendBotFeedback("🚫 Cannot long press '$trimmed': Permission denied for $activePkg.")
+                }
+            )
+            return false
+        }
+
         var clickedSuccess = false
         var feedback = "✅ Done: Long-press '$trimmed' completed."
         try {
@@ -1582,6 +1688,26 @@ class AttendanceAccessibilityService : AccessibilityService() {
     @JvmOverloads
     fun scrollScreen(direction: String, broadcastFeedback: Boolean = true): Boolean {
         val dir = direction.lowercase().trim()
+        val activePkg = (rootInActiveWindow?.packageName?.toString() ?: lastExternalPackage).orEmpty()
+        if (activePkg.contains("permissioncontroller", ignoreCase = true)) {
+            val msg = "⚠️ System permission prompt detected—please tap Allow on screen to continue"
+            sendBotFeedback(msg)
+            return false
+        }
+        if (activePkg.isNotEmpty() && !AppPermissionManager.isPackageAllowed(this, activePkg)) {
+            requestAppPermissionIfNeeded(
+                packageName = activePkg,
+                actionDescription = "Scroll screen in $activePkg",
+                onGranted = {
+                    scrollScreen(direction, broadcastFeedback)
+                },
+                onDenied = {
+                    sendBotFeedback("🚫 Cannot scroll: Permission denied for $activePkg.")
+                }
+            )
+            return false
+        }
+
         var scrolled = false
         var feedback = "✅ Done: Scroll $dir completed."
         try {
@@ -1965,16 +2091,25 @@ class AttendanceAccessibilityService : AccessibilityService() {
     }
 
     private fun openPackage(app: AppCandidate, context: Context) {
-        val pm = context.packageManager
-        val launchIntent = pm.getLaunchIntentForPackage(app.packageName)
-        if (launchIntent != null) {
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(launchIntent)
-            lastExternalPackage = app.packageName
-            sendBotFeedback("✅ Done: Opened ${app.label}.")
-        } else {
-            sendBotFeedback("⚠️ Bot Error: Cannot launch ${app.label}.")
-        }
+        requestAppPermissionIfNeeded(
+            packageName = app.packageName,
+            actionDescription = "Open ${app.label} and interact with screen",
+            onGranted = {
+                val pm = context.packageManager
+                val launchIntent = pm.getLaunchIntentForPackage(app.packageName)
+                if (launchIntent != null) {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(launchIntent)
+                    lastExternalPackage = app.packageName
+                    sendBotFeedback("✅ Done: Opened ${app.label}.")
+                } else {
+                    sendBotFeedback("⚠️ Bot Error: Cannot launch ${app.label}.")
+                }
+            },
+            onDenied = {
+                sendBotFeedback("🚫 Cannot open ${app.label}: Access denied by user.")
+            }
+        )
     }
 
     /**
