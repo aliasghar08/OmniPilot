@@ -430,12 +430,33 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "getInstalledApps" -> {
-                        val service = AttendanceAccessibilityService.instance
-                        if (service != null) {
-                            val query = call.argument<String>("query")
-                            result.success(service.getInstalledApps(query))
-                        } else {
-                            notifyServiceDisabled("Accessibility service is disabled.", result)
+                        try {
+                            val query = call.argument<String>("query")?.lowercase()?.trim() ?: ""
+                            val pm = packageManager
+                            val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+                                addCategory(Intent.CATEGORY_LAUNCHER)
+                            }
+                            val resolveInfos = pm.queryIntentActivities(mainIntent, 0)
+                            val apps = mutableListOf<Map<String, String>>()
+                            val seen = mutableSetOf<String>()
+                            for (info in resolveInfos) {
+                                val pkg = info.activityInfo?.packageName ?: continue
+                                if (seen.contains(pkg) || pkg == packageName) continue
+                                val label = info.loadLabel(pm)?.toString() ?: pkg
+                                if (query.isEmpty() || label.lowercase().contains(query) || pkg.lowercase().contains(query)) {
+                                    seen.add(pkg)
+                                    apps.add(mapOf("appName" to label, "packageName" to pkg))
+                                }
+                            }
+                            result.success(apps.sortedBy { (it["appName"] ?: "").lowercase() })
+                        } catch (e: Exception) {
+                            val service = AttendanceAccessibilityService.instance
+                            if (service != null) {
+                                val query = call.argument<String>("query")
+                                result.success(service.getInstalledApps(query))
+                            } else {
+                                result.success(emptyList<Map<String, String>>())
+                            }
                         }
                     }
 

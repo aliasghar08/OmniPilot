@@ -35,7 +35,7 @@ class _InAppCustomizationCardState extends State<InAppCustomizationCard> {
     widget.onSettingsChanged?.call();
   }
 
-  void _showAddShortcutDialog(BuildContext context) {
+  void _showManualAddShortcutDialog(BuildContext context) {
     final nameCtrl = TextEditingController();
     final queryCtrl = TextEditingController();
 
@@ -99,6 +99,244 @@ class _InAppCustomizationCardState extends State<InAppCustomizationCard> {
     );
   }
 
+  Future<void> _showAppSelectionDialog(BuildContext context) async {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        String searchQuery = '';
+        final searchCtrl = TextEditingController();
+
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E3A8A) : const Color(0xFFDBEAFE),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.apps_rounded,
+                      color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Select Target App',
+                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          'Choose from downloaded apps to create shortcut',
+                          style: TextStyle(fontSize: 11, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.pop(dialogContext),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 420,
+                child: FutureBuilder<List<Map<String, String>>>(
+                  future: AccessibilityBridge.getInstalledApps(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 12),
+                            Text('Loading installed apps...', style: TextStyle(fontSize: 12)),
+                          ],
+                        ),
+                      );
+                    }
+
+                    final allApps = snapshot.data ?? [];
+                    if (allApps.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.app_blocking_rounded, size: 40, color: Colors.grey),
+                            const SizedBox(height: 10),
+                            const Text('No downloaded apps found.', style: TextStyle(fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 12),
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                Navigator.pop(dialogContext);
+                                _showManualAddShortcutDialog(context);
+                              },
+                              icon: const Icon(Icons.edit, size: 16),
+                              label: const Text('Enter package name manually'),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    final existingShortcuts = _settings.shortcuts
+                        .map((e) => e.packageOrQuery.toLowerCase())
+                        .toSet();
+
+                    final filtered = allApps.where((app) {
+                      final name = (app['appName'] ?? '').toLowerCase();
+                      final pkg = (app['packageName'] ?? '').toLowerCase();
+                      final q = searchQuery.toLowerCase().trim();
+                      if (q.isEmpty) return true;
+                      return name.contains(q) || pkg.contains(q);
+                    }).toList();
+
+                    return Column(
+                      children: [
+                        TextField(
+                          controller: searchCtrl,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            hintText: 'Search downloaded apps...',
+                            prefixIcon: const Icon(Icons.search, size: 20),
+                            suffixIcon: searchQuery.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 18),
+                                    onPressed: () {
+                                      searchCtrl.clear();
+                                      setDialogState(() {
+                                        searchQuery = '';
+                                      });
+                                    },
+                                  )
+                                : null,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onChanged: (val) {
+                            setDialogState(() {
+                              searchQuery = val;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        Expanded(
+                          child: filtered.isEmpty
+                              ? const Center(
+                                  child: Text('No apps match your search.', style: TextStyle(color: Colors.grey)),
+                                )
+                              : ListView.separated(
+                                  itemCount: filtered.length,
+                                  separatorBuilder: (_, _) => const Divider(height: 1),
+                                  itemBuilder: (context, idx) {
+                                    final app = filtered[idx];
+                                    final name = app['appName'] ?? 'App';
+                                    final pkg = app['packageName'] ?? '';
+                                    final isAdded = existingShortcuts.contains(pkg.toLowerCase()) ||
+                                        existingShortcuts.contains(name.toLowerCase());
+
+                                    return ListTile(
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                      leading: CircleAvatar(
+                                        backgroundColor: isDark
+                                            ? const Color(0xFF1E3A8A)
+                                            : const Color(0xFFDBEAFE),
+                                        child: Text(
+                                          name.isNotEmpty ? name[0].toUpperCase() : 'A',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
+                                          ),
+                                        ),
+                                      ),
+                                      title: Text(
+                                        name,
+                                        style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      subtitle: Text(
+                                        pkg,
+                                        style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      trailing: isAdded
+                                          ? const Chip(
+                                              label: Text('Added', style: TextStyle(fontSize: 11)),
+                                              visualDensity: VisualDensity.compact,
+                                              side: BorderSide.none,
+                                            )
+                                          : FilledButton.tonal(
+                                              style: FilledButton.styleFrom(
+                                                visualDensity: VisualDensity.compact,
+                                                padding: const EdgeInsets.symmetric(horizontal: 10),
+                                              ),
+                                              onPressed: () async {
+                                                await _settings.addShortcut(name, pkg);
+                                                if (dialogContext.mounted) {
+                                                  Navigator.pop(dialogContext);
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text('Added $name to target apps.'),
+                                                      duration: const Duration(seconds: 2),
+                                                    ),
+                                                  );
+                                                }
+                                              },
+                                              child: const Text('Add', style: TextStyle(fontSize: 12)),
+                                            ),
+                                      onTap: () async {
+                                        if (isAdded) return;
+                                        await _settings.addShortcut(name, pkg);
+                                        if (dialogContext.mounted) {
+                                          Navigator.pop(dialogContext);
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text('Added $name to target apps.'),
+                                              duration: const Duration(seconds: 2),
+                                            ),
+                                          );
+                                        }
+                                      },
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              actions: [
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                    _showManualAddShortcutDialog(context);
+                  },
+                  icon: const Icon(Icons.edit_note_rounded, size: 16),
+                  label: const Text('Enter Manually', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -148,7 +386,7 @@ class _InAppCustomizationCardState extends State<InAppCustomizationCard> {
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                 ),
                 TextButton.icon(
-                  onPressed: () => _showAddShortcutDialog(context),
+                  onPressed: () => _showAppSelectionDialog(context),
                   icon: const Icon(Icons.add, size: 16),
                   label: const Text('Add App', style: TextStyle(fontSize: 12)),
                 ),
