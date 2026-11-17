@@ -211,7 +211,7 @@ class FloatingBubbleService : Service() {
         }
 
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        setupFloatingBubble()
+        setupSlidingEdgeHandle()
         setupFloatingStatusBubble()
         setupFloatingCommandPanel()
 
@@ -268,45 +268,63 @@ class FloatingBubbleService : Service() {
         ).toInt()
     }
 
-    private fun setupFloatingBubble() {
+    /**
+     * Sets up a sleek, flush edge sliding tab/handle docked to the right edge of the screen.
+     * Replaces the floating round overlay icon with an unobtrusive edge slider.
+     */
+    private fun setupSlidingEdgeHandle() {
+        val handleWidth = dp(14)
+        val handleHeight = dp(76)
+        val screenH = resources.displayMetrics.heightPixels
+
         val params = WindowManager.LayoutParams(
-            dp(58),
-            dp(58),
+            handleWidth,
+            handleHeight,
             overlayLayoutType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = dp(16)
-            y = dp(120)
+            gravity = Gravity.TOP or Gravity.END
+            x = 0
+            y = (screenH * 0.32).toInt()
         }
         bubbleParams = params
 
-        val bubble = ImageView(this).apply {
-            val bg = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#0F172A"))
-                setStroke(dp(2), Color.parseColor("#38BDF8"))
+        val handleContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            isClickable = true
+            isFocusable = false
+
+            // Sleek inner pill docked flush to the screen edge with rounded inner corners
+            val innerPill = View(context).apply {
+                val pillBg = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadii = floatArrayOf(
+                        dp(8).toFloat(), dp(8).toFloat(), // top-left
+                        0f, 0f,                           // top-right
+                        0f, 0f,                           // bottom-right
+                        dp(8).toFloat(), dp(8).toFloat()  // bottom-left
+                    )
+                    setColor(Color.parseColor("#E60F172A"))
+                    setStroke(dp(1), Color.parseColor("#38BDF8"))
+                }
+                background = pillBg
+                elevation = dp(6).toFloat()
+                layoutParams = LinearLayout.LayoutParams(dp(6), dp(62))
             }
-            background = bg
-            setImageResource(R.mipmap.ic_launcher)
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            val pad = dp(4)
-            setPadding(pad, pad, pad, pad)
-            elevation = dp(8).toFloat()
+            addView(innerPill)
         }
 
-        var initialX = 0
         var initialY = 0
         var initialTouchX = 0f
         var initialTouchY = 0f
         var isClick = false
-        val clickSlop = dp(20)
+        val clickSlop = dp(16)
 
-        bubble.setOnTouchListener { _, event ->
+        handleContainer.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialX = params.x
                     initialY = params.y
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
@@ -314,22 +332,31 @@ class FloatingBubbleService : Service() {
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val deltaX = (event.rawX - initialTouchX).toInt()
+                    val deltaX = event.rawX - initialTouchX
                     val deltaY = (event.rawY - initialTouchY).toInt()
-                    if (Math.abs(deltaX) > clickSlop || Math.abs(deltaY) > clickSlop) {
+
+                    // Sliding inward (left swipe from right edge) smoothly opens the sliding menu
+                    if (deltaX < -dp(18)) {
                         isClick = false
+                        expandCommandPanel()
+                        return@setOnTouchListener true
                     }
-                    params.x = initialX + deltaX
-                    params.y = initialY + deltaY
-                    try {
-                        windowManager?.updateViewLayout(bubble, params)
-                    } catch (_: Exception) {}
+
+                    if (Math.abs(deltaY) > clickSlop) {
+                        isClick = false
+                        params.y = (initialY + deltaY).coerceIn(dp(40), screenH - dp(120))
+                        try {
+                            windowManager?.updateViewLayout(handleContainer, params)
+                        } catch (_: Exception) {}
+                    }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    val deltaX = (event.rawX - initialTouchX).toInt()
-                    val deltaY = (event.rawY - initialTouchY).toInt()
+                    val deltaX = event.rawX - initialTouchX
+                    val deltaY = event.rawY - initialTouchY
                     if (isClick && Math.abs(deltaX) <= clickSlop && Math.abs(deltaY) <= clickSlop) {
+                        expandCommandPanel()
+                    } else if (deltaX < -dp(14)) {
                         expandCommandPanel()
                     }
                     true
@@ -338,9 +365,9 @@ class FloatingBubbleService : Service() {
             }
         }
 
-        floatingBubbleView = bubble
+        floatingBubbleView = handleContainer
         try {
-            windowManager?.addView(bubble, params)
+            windowManager?.addView(handleContainer, params)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -390,7 +417,7 @@ class FloatingBubbleService : Service() {
 
     private fun setupFloatingCommandPanel() {
         val screenWidth = resources.displayMetrics.widthPixels
-        val panelWidth = (screenWidth * 0.92).toInt()
+        val panelWidth = (screenWidth * 0.93).toInt()
 
         // Start with FLAG_NOT_FOCUSABLE so underlying app keeps window focus until user taps the input box
         val params = WindowManager.LayoutParams(
@@ -400,8 +427,9 @@ class FloatingBubbleService : Service() {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = dp(64)
+            gravity = Gravity.TOP or Gravity.END
+            x = dp(8)
+            y = dp(52)
         }
         panelParams = params
 
@@ -418,6 +446,14 @@ class FloatingBubbleService : Service() {
             setPadding(pad, pad, pad, pad)
             elevation = dp(12).toFloat()
             visibility = View.GONE
+            setOnTouchListener { _, event ->
+                if (event.action == MotionEvent.ACTION_OUTSIDE) {
+                    collapseCommandPanel()
+                    true
+                } else {
+                    false
+                }
+            }
         }
 
         // 1. Header Row
@@ -441,7 +477,7 @@ class FloatingBubbleService : Service() {
         }
 
         val titleText = TextView(this).apply {
-            text = "OmniPilot Overlay"
+            text = "OmniPilot Menu"
             setTextColor(Color.parseColor("#0F172A"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             setTypeface(typeface, Typeface.BOLD)
@@ -817,13 +853,37 @@ class FloatingBubbleService : Service() {
         enablePanelKeyboardFocus(false)
         // Inspect BEFORE showing the panel so zero nodes are occluded by the overlay
         performNativeInspectAndVerify()
-        floatingPanelView?.visibility = View.VISIBLE
+
+        val panel = floatingPanelView ?: return
+        val screenWidth = resources.displayMetrics.widthPixels
+        panel.translationX = screenWidth.toFloat()
+        panel.visibility = View.VISIBLE
+        panel.animate()
+            .translationX(0f)
+            .setDuration(240L)
+            .setInterpolator(android.view.animation.DecelerateInterpolator())
+            .start()
     }
 
     private fun collapseCommandPanel() {
         enablePanelKeyboardFocus(false)
-        floatingPanelView?.visibility = View.GONE
-        floatingBubbleView?.visibility = View.VISIBLE
+        val panel = floatingPanelView
+        if (panel != null && panel.visibility == View.VISIBLE) {
+            val screenWidth = resources.displayMetrics.widthPixels
+            panel.animate()
+                .translationX(screenWidth.toFloat())
+                .setDuration(190L)
+                .setInterpolator(android.view.animation.AccelerateInterpolator())
+                .withEndAction {
+                    panel.visibility = View.GONE
+                    panel.translationX = 0f
+                    floatingBubbleView?.visibility = View.VISIBLE
+                }
+                .start()
+        } else {
+            panel?.visibility = View.GONE
+            floatingBubbleView?.visibility = View.VISIBLE
+        }
     }
 
     private fun updateStatus(message: String) {
@@ -1218,7 +1278,7 @@ class FloatingBubbleService : Service() {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("OmniPilot Assistant Active")
-                .setContentText("Tap to open OmniPilot • Tap floating bubble to inspect & control any app")
+                .setContentText("Tap to open OmniPilot • Slide edge menu to inspect & control any app")
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentIntent(pendingIntent)
                 .build()
@@ -1226,7 +1286,7 @@ class FloatingBubbleService : Service() {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
                 .setContentTitle("OmniPilot Assistant Active")
-                .setContentText("Tap to open OmniPilot • Tap floating bubble to inspect & control any app")
+                .setContentText("Tap to open OmniPilot • Slide edge menu to inspect & control any app")
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentIntent(pendingIntent)
                 .build()

@@ -138,14 +138,14 @@ class CrossAppControllerCard extends StatelessWidget {
             ),
             const Divider(height: 16),
 
-            // 3. Floating Assistant Bubble Tile
+            // 3. Sliding AI Edge Assistant Tile
             PermissionStatusTile(
-              icon: isBubbleRunning ? Icons.bubble_chart : Icons.radio_button_unchecked,
+              icon: isBubbleRunning ? Icons.view_sidebar_rounded : Icons.radio_button_unchecked,
               iconColor: isBubbleRunning ? Colors.blue : Colors.grey,
-              title: 'Interactive Floating AI Assistant',
+              title: 'Sliding AI Edge Assistant',
               subtitle: isBubbleRunning
-                  ? 'Active on screen • Tap bubble in any app to open AI HUD'
-                  : 'Floating command bar to inspect & fill without leaving other apps',
+                  ? 'Active on edge • Slide edge handle to open AI menu (no overlay icon)'
+                  : 'Sliding edge menu to inspect & control without leaving other apps',
               trailing: Switch(
                 value: isBubbleRunning,
                 onChanged: (_) => onToggleBubble(),
