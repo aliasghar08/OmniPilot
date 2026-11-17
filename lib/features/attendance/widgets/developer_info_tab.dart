@@ -2,14 +2,12 @@ import 'package:flutter/material.dart';
 import '../../../core/core.dart';
 
 /// Dedicated Developer Info tab presenting verified authorship, contact details,
-/// DMCA protection notices, Quantum Forge cryptographic integrity token, and app license.
+/// and developer profile for Ali Asghar.
 class DeveloperInfoTab extends StatelessWidget {
   const DeveloperInfoTab({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final isIntact = OwnershipGuard.verifyIntegrity();
-    final runtimeToken = OwnershipGuard.computeRuntimeToken();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -194,92 +192,7 @@ class DeveloperInfoTab extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          // 3. Quantum Forge Cryptographic Integrity Verification Card
-          Card(
-            elevation: 1,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: isDark ? Colors.green.withValues(alpha: 0.15) : const Color(0xFFECFDF5),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(Icons.verified_user, color: isDark ? Colors.green.shade300 : Colors.green.shade800, size: 22),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Quantum Forge Integrity',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                            ),
-                            Text(
-                              'Cryptographic Authorship Guard',
-                              style: TextStyle(fontSize: 11.5, color: colorScheme.onSurfaceVariant),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Chip(
-                        avatar: Icon(
-                          isIntact ? Icons.check_circle : Icons.error,
-                          size: 14,
-                          color: isIntact ? (isDark ? const Color(0xFF6EE7B7) : Colors.green.shade900) : (isDark ? const Color(0xFFFCA5A5) : Colors.red.shade900),
-                        ),
-                        label: Text(
-                          isIntact ? 'VERIFIED' : 'TAMPERED',
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.bold,
-                            color: isIntact ? (isDark ? const Color(0xFF6EE7B7) : Colors.green.shade900) : (isDark ? const Color(0xFFFCA5A5) : Colors.red.shade900),
-                          ),
-                        ),
-                        backgroundColor: isIntact
-                            ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFDCFCE7))
-                            : (isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFEE2E2)),
-                        side: BorderSide.none,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Runtime Authorship Token:',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: colorScheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 4),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: colorScheme.outline),
-                    ),
-                    child: Text(
-                      runtimeToken,
-                      style: TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 10.5,
-                        color: colorScheme.onSurface,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // 4. Application & Compatibility Specs
+          // 3. Application & Compatibility Specs
           Card(
             elevation: 1,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

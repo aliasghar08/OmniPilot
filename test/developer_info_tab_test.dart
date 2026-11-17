@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:attendance_copilot/omnipilot.dart';
 
 void main() {
-  testWidgets('DeveloperInfoTab renders owner name, email, DMCA protection, and token',
+  testWidgets('DeveloperInfoTab renders owner name, email, and DMCA protection',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       const MaterialApp(
@@ -17,9 +17,7 @@ void main() {
     expect(find.text(FloatingCopyrightWatermark.ownerName), findsOneWidget);
     expect(find.text(FloatingCopyrightWatermark.ownerEmail), findsOneWidget);
     expect(find.text('DMCA Protected & Copyright'), findsOneWidget);
-    expect(find.text('Quantum Forge Integrity'), findsOneWidget);
-    expect(find.text('VERIFIED'), findsOneWidget);
-    expect(find.text(OwnershipGuard.computeRuntimeToken()), findsOneWidget);
+    expect(find.text('Author & Lead'), findsOneWidget);
   });
 
   test('PeriodAttendancePromptParser extracts human language entities dynamically', () {
