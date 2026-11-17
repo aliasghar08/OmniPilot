@@ -54,6 +54,16 @@
                 android:value="Floating assistant overlay for attendance data entry" />
         </service>
 
+        <!-- On-Demand Copilot Shortcut & Broadcast Trigger Receiver -->
+        <receiver
+            android:name=".CopilotShortcutReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.dartnexuslab.omnipilot.TRIGGER_COPILOT" />
+                <action android:name="com.dartnexuslab.omnipilot.SHOW_COPILOT" />
+            </intent-filter>
+        </receiver>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

@@ -56,6 +56,13 @@ class FloatingBubbleService : Service() {
     private var bubbleParams: WindowManager.LayoutParams? = null
     private var panelParams: WindowManager.LayoutParams? = null
 
+    // On-Demand Copilot Sliding Menu (No permanent floating icon)
+    private var copilotMenuView: View? = null
+    private var copilotMenuParams: WindowManager.LayoutParams? = null
+    private var copilotStatusTv: TextView? = null
+    private var copilotPromptEt: EditText? = null
+    private var copilotTargetAppTv: TextView? = null
+
     private var statusTextView: TextView? = null
     private var panelStatusTextView: TextView? = null
     private var promptInput: EditText? = null
@@ -74,8 +81,27 @@ class FloatingBubbleService : Service() {
     companion object {
         private const val CHANNEL_ID = "floating_bubble_channel"
         private const val NOTIFICATION_ID = 2001
+        const val ACTION_SHOW_COPILOT = "com.dartnexuslab.omnipilot.SHOW_COPILOT"
         const val ACTION_SHOW_PANEL = "com.dartnexuslab.omnipilot.SHOW_PANEL"
         const val ACTION_TOGGLE = "com.dartnexuslab.omnipilot.TOGGLE"
+
+        fun showCopilotMenu(context: Context) {
+            val inst = instance
+            if (inst != null) {
+                Handler(Looper.getMainLooper()).post {
+                    inst.renderCopilotOverlayMenu()
+                }
+            } else {
+                val intent = Intent(context, FloatingBubbleService::class.java).apply {
+                    action = ACTION_SHOW_COPILOT
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            }
+        }
 
         // Synced with Flutter SharedPreferences key "flutter.tts_voice_enabled"
         private const val PREFS_NAME = "FlutterSharedPreferences"
@@ -175,6 +201,7 @@ class FloatingBubbleService : Service() {
                         postDelayed({ visibility = View.GONE }, 3500)
                     }
                     service.panelStatusTextView?.text = feedback
+                    service.copilotStatusTv?.text = feedback
                     service.addChatMessage("OmniPilot", feedback)
                     if (isTtsVoiceEnabled) {
                         service.speakTextDirectly(feedback)
@@ -264,11 +291,14 @@ class FloatingBubbleService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            ACTION_SHOW_COPILOT -> {
+                mainHandler.post { renderCopilotOverlayMenu() }
+            }
             ACTION_SHOW_PANEL -> {
-                mainHandler.post { expandCommandPanel() }
+                mainHandler.post { renderCopilotOverlayMenu() }
             }
             ACTION_TOGGLE -> {
-                mainHandler.post { toggleCommandPanel() }
+                mainHandler.post { renderCopilotOverlayMenu() }
             }
         }
         return START_STICKY
@@ -508,22 +538,425 @@ class FloatingBubbleService : Service() {
         } catch (_: Exception) {}
     }
 
+    fun dismissCopilotMenu() {
+        mainHandler.post {
+            enableCopilotKeyboardFocus(false)
+            copilotMenuView?.let {
+                try {
+                    windowManager?.removeView(it)
+                } catch (_: Exception) {}
+                copilotMenuView = null
+            }
+        }
+    }
+
+    private fun enableCopilotKeyboardFocus(focusable: Boolean) {
+        val menu = copilotMenuView ?: return
+        val params = copilotMenuParams ?: return
+        if (focusable) {
+            params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        } else {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(menu.windowToken, 0)
+            params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        }
+        try {
+            windowManager?.updateViewLayout(menu, params)
+        } catch (_: Exception) {}
+    }
+
     /**
-     * Temporarily hides the overlay panel for 150ms so Android / Jetpack Compose
-     * exposes 100% of underlying nodes without occlusion, runs [action], and restores the panel.
+     * Temporarily hides the overlay copilot menu for 180ms so Android / Jetpack Compose
+     * exposes 100% of underlying nodes without occlusion, runs [action], and restores the menu.
      */
     private fun runWithUnderlyingAppFocus(action: () -> Unit) {
+        enableCopilotKeyboardFocus(false)
         enablePanelKeyboardFocus(false)
-        floatingPanelView?.visibility = View.GONE
+        val menu = copilotMenuView
+        val panel = floatingPanelView
+        menu?.visibility = View.INVISIBLE
+        panel?.visibility = View.GONE
         mainHandler.postDelayed({
             try {
                 action()
             } finally {
                 mainHandler.postDelayed({
-                    floatingPanelView?.visibility = View.VISIBLE
-                }, 120L)
+                    menu?.visibility = View.VISIBLE
+                    panel?.visibility = View.VISIBLE
+                }, 140L)
             }
-        }, 160L)
+        }, 180L)
+    }
+
+    fun renderCopilotOverlayMenu() {
+        if (!SystemPermissionHelper.hasOverlayPermission(this)) {
+            val req = SystemPermissionHelper.getRequirementInfo(SystemPermissionHelper.PERM_OVERLAY)
+            showSystemPermissionPopup(req.key, req.title, req.reason)
+            return
+        }
+
+        val wm = windowManager ?: (getSystemService(Context.WINDOW_SERVICE) as WindowManager)
+
+        // If already showing, toggle it closed
+        if (copilotMenuView != null) {
+            dismissCopilotMenu()
+            return
+        }
+
+        val screenWidth = resources.displayMetrics.widthPixels
+        val dialogWidth = (screenWidth * 0.94).toInt()
+
+        val params = WindowManager.LayoutParams(
+            dialogWidth,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            overlayLayoutType(),
+            WindowManager.LayoutParams.FLAG_DIM_BEHIND or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM
+            y = dp(24)
+            dimAmount = 0.50f
+        }
+        copilotMenuParams = params
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val padH = dp(16)
+            val padV = dp(14)
+            setPadding(padH, padV, padH, padV)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(18).toFloat()
+                setColor(Color.parseColor("#0F172A")) // Slate 900
+                setStroke(dp(1), Color.parseColor("#38BDF8")) // Sky blue border
+            }
+            elevation = dp(20).toFloat()
+        }
+
+        // Header Row: Title + Close Button
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(8)
+            }
+        }
+
+        val titleCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        val titleTv = TextView(this).apply {
+            text = "🤖 OmniPilot Copilot"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15.5f)
+            setTypeface(typeface, Typeface.BOLD)
+        }
+
+        val subtitleTv = TextView(this).apply {
+            text = "AI Assistant for Active App"
+            setTextColor(Color.parseColor("#94A3B8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+        }
+        titleCol.addView(titleTv)
+        titleCol.addView(subtitleTv)
+
+        val closeBtn = TextView(this).apply {
+            text = "✕"
+            setTextColor(Color.parseColor("#94A3B8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(12).toFloat()
+                setColor(Color.parseColor("#1E293B"))
+            }
+            setOnClickListener {
+                dismissCopilotMenu()
+            }
+        }
+
+        headerRow.addView(titleCol)
+        headerRow.addView(closeBtn)
+        container.addView(headerRow)
+
+        // Target App Badge
+        val service = AttendanceAccessibilityService.instance
+        val activePkg = AttendanceAccessibilityService.lastExternalPackage
+            ?: service?.rootInActiveWindow?.packageName?.toString()
+            ?: "External App"
+
+        val targetBadge = TextView(this).apply {
+            text = "📱 Target App: $activePkg"
+            setTextColor(Color.parseColor("#38BDF8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(8).toFloat()
+                setColor(Color.parseColor("#1E293B"))
+                setStroke(dp(1), Color.parseColor("#334155"))
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(10)
+            }
+        }
+        copilotTargetAppTv = targetBadge
+        container.addView(targetBadge)
+
+        // Quick Action Chips Horizontal Scroll
+        val chipsScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(10)
+            }
+        }
+
+        val chipsLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        fun createCopilotChip(label: String, onClick: () -> Unit): TextView {
+            return TextView(this).apply {
+                text = label
+                setTextColor(Color.parseColor("#E0F2FE"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(dp(10), dp(6), dp(10), dp(6))
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = dp(14).toFloat()
+                    setColor(Color.parseColor("#0369A1"))
+                    setStroke(dp(1), Color.parseColor("#38BDF8"))
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    marginEnd = dp(6)
+                }
+                setOnClickListener { onClick() }
+            }
+        }
+
+        chipsLayout.addView(createCopilotChip("🔍 Inspect Screen") {
+            copilotStatusTv?.text = "⏳ Inspecting active screen..."
+            runWithUnderlyingAppFocus {
+                performNativeInspectAndVerify()
+            }
+        })
+
+        chipsLayout.addView(createCopilotChip("⚡ Auto-Fill Form") {
+            copilotStatusTv?.text = "⏳ Auto-filling target fields..."
+            runWithUnderlyingAppFocus {
+                performQuickFillDemo()
+            }
+        })
+
+        chipsLayout.addView(createCopilotChip("📝 Write AI Note") {
+            copilotStatusTv?.text = "⏳ Writing structured AI note..."
+            runWithUnderlyingAppFocus {
+                performAiNoteWriteWorkflow()
+            }
+        })
+
+        chipsLayout.addView(createCopilotChip("⬇️ Scroll Down") {
+            runWithUnderlyingAppFocus {
+                val ok = AttendanceAccessibilityService.instance?.scrollScreen("down") ?: false
+                val msg = if (ok) "✅ Scrolled down." else "⚠️ Cannot scroll down."
+                updateStatusBubble(msg)
+            }
+        })
+
+        chipsLayout.addView(createCopilotChip("⬆️ Scroll Up") {
+            runWithUnderlyingAppFocus {
+                val ok = AttendanceAccessibilityService.instance?.scrollScreen("up") ?: false
+                val msg = if (ok) "✅ Scrolled up." else "⚠️ Cannot scroll up."
+                updateStatusBubble(msg)
+            }
+        })
+
+        chipsLayout.addView(createCopilotChip("◀ Go Back") {
+            dismissCopilotMenu()
+            AttendanceAccessibilityService.instance?.performSystemNavigation("BACK")
+        })
+
+        chipsScroll.addView(chipsLayout)
+        container.addView(chipsScroll)
+
+        // AI Input Row
+        val inputRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(8)
+            }
+        }
+
+        val promptEt = EditText(this).apply {
+            hint = "Ask AI (e.g. Enter name Ali Asghar, phone 0300...)"
+            setHintTextColor(Color.parseColor("#64748B"))
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            maxLines = 2
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(10).toFloat()
+                setColor(Color.parseColor("#1E293B"))
+                setStroke(dp(1), Color.parseColor("#334155"))
+            }
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = dp(6)
+            }
+            setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) enableCopilotKeyboardFocus(true)
+            }
+            setOnClickListener {
+                enableCopilotKeyboardFocus(true)
+            }
+        }
+        copilotPromptEt = promptEt
+        inputRow.addView(promptEt)
+
+        val runBtn = Button(this).apply {
+            text = "Run AI"
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTypeface(typeface, Typeface.BOLD)
+            minWidth = 0
+            minimumWidth = 0
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(10).toFloat()
+                setColor(Color.parseColor("#2563EB"))
+            }
+            setOnClickListener {
+                val text = promptEt.text?.toString()?.trim() ?: ""
+                if (text.isNotBlank()) {
+                    enableCopilotKeyboardFocus(false)
+                    executeUserInstructionOverApp(text)
+                }
+            }
+        }
+        inputRow.addView(runBtn)
+        container.addView(inputRow)
+
+        // Status Feedback Box
+        val statusScroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(80)
+            ).apply {
+                bottomMargin = dp(8)
+            }
+        }
+
+        val statusTv = TextView(this).apply {
+            text = "Ready to assist. Tap a quick action above or type an instruction."
+            setTextColor(Color.parseColor("#E2E8F0"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(8).toFloat()
+                setColor(Color.parseColor("#0F172A"))
+                setStroke(dp(1), Color.parseColor("#1E293B"))
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        copilotStatusTv = statusTv
+        statusScroll.addView(statusTv)
+        container.addView(statusScroll)
+
+        // Bottom Controls: Voice TTS & Dismiss
+        val bottomRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val voiceBtn = Button(this).apply {
+            isAllCaps = false
+            minWidth = 0
+            minimumWidth = 0
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            val enabled = isTtsVoiceEnabled
+            text = if (enabled) "🔊 Voice: On" else "🔇 Voice: Off"
+            setTextColor(if (enabled) Color.parseColor("#15803D") else Color.parseColor("#64748B"))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(8).toFloat()
+                setColor(if (enabled) Color.parseColor("#DCFCE7") else Color.parseColor("#1E293B"))
+            }
+            setOnClickListener {
+                val next = !isTtsVoiceEnabled
+                setTtsVoiceEnabled(next)
+                text = if (next) "🔊 Voice: On" else "🔇 Voice: Off"
+                setTextColor(if (next) Color.parseColor("#15803D") else Color.parseColor("#64748B"))
+                (background as? GradientDrawable)?.setColor(if (next) Color.parseColor("#DCFCE7") else Color.parseColor("#1E293B"))
+            }
+        }
+        bottomRow.addView(voiceBtn)
+
+        val spacer = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, 0, 1f)
+        }
+        bottomRow.addView(spacer)
+
+        val dismissBtn = Button(this).apply {
+            text = "Dismiss"
+            isAllCaps = false
+            minWidth = 0
+            minimumWidth = 0
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(dp(12), dp(5), dp(12), dp(5))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextColor(Color.parseColor("#94A3B8"))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(8).toFloat()
+                setColor(Color.parseColor("#1E293B"))
+            }
+            setOnClickListener {
+                dismissCopilotMenu()
+            }
+        }
+        bottomRow.addView(dismissBtn)
+
+        container.addView(bottomRow)
+
+        copilotMenuView = container
+        try {
+            wm.addView(container, params)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun expandCommandPanel() {
@@ -965,20 +1398,27 @@ class FloatingBubbleService : Service() {
         }
         val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, flags)
 
+        val copilotIntent = Intent(this, FloatingBubbleService::class.java).apply {
+            action = ACTION_SHOW_COPILOT
+        }
+        val copilotPendingIntent = PendingIntent.getService(this, 202, copilotIntent, flags)
+
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("OmniPilot Copilot Active")
-                .setContentText("Tap to open OmniPilot")
+                .setContentTitle("OmniPilot Copilot Ready")
+                .setContentText("Tap 'Open Copilot' to automate active app")
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentIntent(pendingIntent)
+                .addAction(0, "⚡ Open Copilot", copilotPendingIntent)
                 .build()
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-                .setContentTitle("OmniPilot Copilot Active")
-                .setContentText("Tap to open OmniPilot")
+                .setContentTitle("OmniPilot Copilot Ready")
+                .setContentText("Tap 'Open Copilot' to automate active app")
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentIntent(pendingIntent)
+                .addAction(0, "⚡ Open Copilot", copilotPendingIntent)
                 .build()
         }
     }
@@ -1601,6 +2041,12 @@ class FloatingBubbleService : Service() {
             try {
                 windowManager?.removeView(it)
             } catch (_: Exception) {}
+        }
+        copilotMenuView?.let {
+            try {
+                windowManager?.removeView(it)
+            } catch (_: Exception) {}
+            copilotMenuView = null
         }
     }
 }

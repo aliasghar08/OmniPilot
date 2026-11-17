@@ -3,10 +3,12 @@ package com.dartnexuslab.omnipilot
 import android.accessibilityservice.AccessibilityButtonController
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Path
 import android.graphics.Rect
@@ -45,6 +47,7 @@ class AttendanceAccessibilityService : AccessibilityService() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var buttonCallback: Any? = null
+    private var copilotTriggerReceiver: BroadcastReceiver? = null
 
     private val ignoredPackages = setOf(
         "com.dartnexuslab.omnipilot",
@@ -113,19 +116,45 @@ class AttendanceAccessibilityService : AccessibilityService() {
                 Log.w(TAG, "Failed to register AccessibilityButtonCallback: ${e.message}")
             }
         }
+
+        // Register broadcast receiver for on-demand Copilot triggers over external apps
+        try {
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    Log.d(TAG, "Copilot trigger broadcast received: ${intent?.action}")
+                    handleAccessibilityShortcutTriggered()
+                }
+            }
+            val filter = IntentFilter().apply {
+                addAction("com.dartnexuslab.omnipilot.TRIGGER_COPILOT")
+                addAction("com.dartnexuslab.omnipilot.SHOW_COPILOT")
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                registerReceiver(receiver, filter)
+            }
+            copilotTriggerReceiver = receiver
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to register copilotTriggerReceiver: ${e.message}")
+        }
     }
 
     /**
      * Responds immediately when the user taps the Android system accessibility button
-     * or triggers the Accessibility Shortcut.
+     * or triggers the Accessibility Shortcut / broadcast.
      */
     fun handleAccessibilityShortcutTriggered() {
         mainHandler.post {
             try {
-                val intent = Intent(this, MainActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                if (SystemPermissionHelper.hasOverlayPermission(this)) {
+                    FloatingBubbleService.showCopilotMenu(this)
+                } else {
+                    val intent = Intent(this, MainActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    }
+                    startActivity(intent)
                 }
-                startActivity(intent)
             } catch (e: Exception) {
                 Log.e(TAG, "Error handling accessibility shortcut trigger: ${e.message}", e)
             }
@@ -157,6 +186,12 @@ class AttendanceAccessibilityService : AccessibilityService() {
                 }
             } catch (_: Exception) {}
             buttonCallback = null
+        }
+        copilotTriggerReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (_: Exception) {}
+            copilotTriggerReceiver = null
         }
         if (instance == this) {
             instance = null
