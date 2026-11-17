@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:attendance_copilot/omnipilot.dart';
@@ -139,5 +140,144 @@ void main() {
       'packageName': 'org.fossify.notes',
       'reason': 'Write attendance notes',
     });
+  });
+
+  test('System permission detection: ensureSystemPermissions when granted', () async {
+    final calls = <String, dynamic>{};
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      calls[methodCall.method] = methodCall.arguments;
+      if (methodCall.method == 'checkAndRequestSystemPermissions') {
+        return {'granted': true};
+      }
+      return null;
+    });
+
+    final granted = await AccessibilityBridge.ensureSystemPermissions(null, scope: 'automation');
+    expect(granted, isTrue);
+    expect(calls['checkAndRequestSystemPermissions'], {
+      'requiredFor': 'automation',
+      'showOverlayPopup': true,
+    });
+  });
+
+  test('System permission detection: ensureSystemPermissions when missing (no context)', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      if (methodCall.method == 'checkAndRequestSystemPermissions') {
+        return {
+          'granted': false,
+          'missing': 'accessibility',
+          'title': 'Accessibility Service',
+          'reason': 'Accessibility is required.',
+          'popupShown': true,
+        };
+      }
+      return null;
+    });
+
+    final granted = await AccessibilityBridge.ensureSystemPermissions(null, scope: 'automation');
+    expect(granted, isFalse);
+  });
+
+  testWidgets('System permission dialog: prompt user in-app and launch settings', (WidgetTester tester) async {
+    final calls = <String, dynamic>{};
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      calls[methodCall.method] = methodCall.arguments;
+      if (methodCall.method == 'checkAndRequestSystemPermissions') {
+        return {
+          'granted': false,
+          'missing': 'overlay',
+          'title': 'Display Over Other Apps',
+          'reason': 'OmniPilot requires overlay permission.',
+          'popupShown': false,
+        };
+      } else if (methodCall.method == 'openSystemPermissionSettings') {
+        return true;
+      }
+      return null;
+    });
+
+    bool? permissionResult;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) {
+              return ElevatedButton(
+                onPressed: () async {
+                  permissionResult = await AccessibilityBridge.ensureSystemPermissions(
+                    context,
+                    scope: 'floating_bubble',
+                  );
+                },
+                child: const Text('Trigger Permission'),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Trigger Permission'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('🔐 Display Over Other Apps'), findsOneWidget);
+    expect(find.text('OmniPilot requires overlay permission.'), findsOneWidget);
+    expect(find.text('Enable in Settings'), findsOneWidget);
+    expect(find.text('Later'), findsOneWidget);
+
+    await tester.tap(find.text('Enable in Settings'));
+    await tester.pumpAndSettle();
+
+    expect(permissionResult, isTrue);
+    expect(calls['openSystemPermissionSettings'], {'permission': 'overlay'});
+  });
+
+  test('System permissions status query and onSystemPermissionsUpdated broadcast', () async {
+    AccessibilityBridge.ensureHandlerRegistered();
+    Map<String, dynamic>? updatedStatus;
+    AccessibilityBridge.onSystemPermissionsUpdated = (status) {
+      updatedStatus = status;
+    };
+
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      if (methodCall.method == 'getSystemPermissionsStatus') {
+        return {
+          'overlay': true,
+          'accessibility': true,
+          'notifications': true,
+          'battery_optimization': false,
+        };
+      }
+      return null;
+    });
+
+    final status = await AccessibilityBridge.getSystemPermissionsStatus();
+    expect(status['overlay'], isTrue);
+    expect(status['accessibility'], isTrue);
+    expect(status['notifications'], isTrue);
+    expect(status['battery_optimization'], isFalse);
+
+    final ByteData updateBytes = const StandardMethodCodec().encodeMethodCall(
+      const MethodCall('onSystemPermissionsUpdated', {
+        'overlay': true,
+        'accessibility': true,
+        'notifications': true,
+        'battery_optimization': true,
+      }),
+    );
+
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+      'com.dartnexuslab.omnipilot/accessibility',
+      updateBytes,
+      (ByteData? _) {},
+    );
+
+    expect(updatedStatus, isNotNull);
+    expect(updatedStatus!['battery_optimization'], isTrue);
   });
 }

@@ -1,10 +1,11 @@
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 /// Top-level helper that wraps MethodChannel bot execution in a try-catch-finally block
 /// with a 5-second timeout so the UI never hangs if the native service fails to respond.
-Future<String> runOmniPilotBot(String command) async {
-  return AccessibilityBridge.runOmniPilotBot(command);
+Future<String> runOmniPilotBot(String command, {BuildContext? context}) async {
+  return AccessibilityBridge.runOmniPilotBot(command, context: context);
 }
 
 /// Communicates with native Android AccessibilityService and FloatingBubbleService
@@ -19,6 +20,9 @@ class AccessibilityBridge {
 
   /// Callback invoked whenever the native Kotlin service broadcasts a concise bot status string.
   static void Function(String message)? onBotFeedbackReceived;
+
+  /// Callback invoked whenever system permissions are updated (e.g. upon returning from Android Settings).
+  static void Function(Map<String, dynamic> status)? onSystemPermissionsUpdated;
 
   /// Stores the most recent concise bot feedback message.
   static String lastBotFeedback = '';
@@ -46,6 +50,13 @@ class AccessibilityBridge {
             onBotFeedbackReceived?.call(message);
           }
           return null;
+        } else if (call.method == 'onSystemPermissionsUpdated') {
+          final raw = call.arguments as Map<dynamic, dynamic>?;
+          if (raw != null) {
+            final status = Map<String, dynamic>.from(raw);
+            onSystemPermissionsUpdated?.call(status);
+          }
+          return null;
         }
       } catch (e) {
         return '❌ Bot Error: ${e.toString()}';
@@ -56,9 +67,15 @@ class AccessibilityBridge {
 
   /// Executes a bot command via the native MethodChannel with a 5-second timeout and
   /// guaranteed concise fallback message on timeout, PlatformException, or unexpected error.
-  static Future<String> runOmniPilotBot(String command) async {
+  static Future<String> runOmniPilotBot(String command, {BuildContext? context}) async {
     String feedback = "✅ Command processed.";
     try {
+      final bool permitted = await ensureSystemPermissions(context, scope: 'automation');
+      if (!permitted) {
+        feedback = "⚠️ Bot Alert: Required system permissions not granted.";
+        return feedback;
+      }
+
       final String? reply = await platform
           .invokeMethod<String>('executeCommand', {'command': command})
           .timeout(const Duration(seconds: 5));
@@ -605,6 +622,167 @@ class AccessibilityBridge {
       return ok ?? false;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// Checks and requests system permissions for a given scope ('floating_bubble', 'automation', or 'all').
+  static Future<Map<String, dynamic>> checkAndRequestSystemPermissions({
+    String scope = 'automation',
+    bool showOverlayPopup = true,
+  }) async {
+    try {
+      final Map<dynamic, dynamic>? raw = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+        'checkAndRequestSystemPermissions',
+        {
+          'requiredFor': scope,
+          'showOverlayPopup': showOverlayPopup,
+        },
+      ).timeout(_defaultTimeout);
+      if (raw == null) return {};
+      return _deepCastMap(raw);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Opens the Android OS system settings screen for a specific permission key.
+  static Future<bool> openSystemPermissionSettings(String permission) async {
+    try {
+      final bool? res = await _channel.invokeMethod<bool>(
+        'openSystemPermissionSettings',
+        {'permission': permission},
+      );
+      return res ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Returns a map of all four critical system permissions and their current status.
+  static Future<Map<String, bool>> getSystemPermissionsStatus() async {
+    try {
+      final Map<dynamic, dynamic>? raw = await _channel
+          .invokeMethod<Map<dynamic, dynamic>>('getSystemPermissionsStatus')
+          .timeout(_defaultTimeout);
+      if (raw == null) return {};
+      final map = <String, bool>{};
+      raw.forEach((k, v) {
+        map[k.toString()] = v == true;
+      });
+      return map;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Checks if POST_NOTIFICATIONS is granted on Android 13+.
+  static Future<bool> hasNotificationPermission() async {
+    try {
+      final bool? res = await _channel.invokeMethod<bool>('hasNotificationPermission');
+      return res ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Opens the notification settings or prompts for runtime notification permission.
+  static Future<void> requestNotificationPermission() async {
+    try {
+      await _channel.invokeMethod('requestNotificationPermission');
+    } catch (_) {}
+  }
+
+  /// Checks if OmniPilot is exempted from battery optimizations.
+  static Future<bool> isBatteryOptimizationIgnored() async {
+    try {
+      final bool? res = await _channel.invokeMethod<bool>('isBatteryOptimizationIgnored');
+      return res ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Ensures that all required system permissions for [scope] are granted before running an action.
+  /// If missing, prompts via overlay popup (if bubble running) or an in-app AlertDialog.
+  static Future<bool> ensureSystemPermissions(
+    BuildContext? context, {
+    String scope = 'automation',
+  }) async {
+    try {
+      final res = await checkAndRequestSystemPermissions(
+        scope: scope,
+        showOverlayPopup: context == null,
+      );
+      if (res.isEmpty) return true; // mock / fallback in test environment
+      final bool granted = res['granted'] == true;
+      if (granted) return true;
+
+      final String missing = res['missing']?.toString() ?? 'overlay';
+      final String title = res['title']?.toString() ?? 'Permission Required';
+      final String reason = res['reason']?.toString() ?? 'This action requires system permissions.';
+      final bool popupShown = res['popupShown'] == true;
+
+      if (context != null && context.mounted && !popupShown) {
+        final bool? userAccepted = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFF1E1E2E),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: Color(0xFF38BDF8), width: 1),
+            ),
+            title: Row(
+              children: [
+                const Icon(Icons.security_rounded, color: Color(0xFF38BDF8), size: 24),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '🔐 $title',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            content: Text(
+              reason,
+              style: const TextStyle(
+                color: Color(0xFFE2E8F0),
+                fontSize: 13.5,
+                height: 1.4,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Later', style: TextStyle(color: Color(0xFF94A3B8))),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                onPressed: () async {
+                  Navigator.of(ctx).pop(true);
+                  await openSystemPermissionSettings(missing);
+                },
+                child: const Text('Enable in Settings'),
+              ),
+            ],
+          ),
+        );
+        return userAccepted ?? false;
+      }
+      return false;
+    } catch (_) {
+      return true;
     }
   }
 

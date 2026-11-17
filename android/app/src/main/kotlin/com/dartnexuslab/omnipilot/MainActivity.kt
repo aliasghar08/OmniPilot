@@ -28,13 +28,22 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Check if any pending permission was granted and resume
+        SystemPermissionHelper.checkAndNotifyPendingPermission(this)
+
+        // Notify Flutter UI to update badges
+        mainHandler.post {
+            try {
+                methodChannel?.invokeMethod(
+                    "onSystemPermissionsUpdated",
+                    SystemPermissionHelper.getAllPermissionsStatus(this)
+                )
+            } catch (_: Exception) {}
+        }
+
         // When user returns to OmniPilot after granting permissions, auto-launch the assistant overlay if authorized
         try {
-            val canOverlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                Settings.canDrawOverlays(this)
-            } else {
-                true
-            }
+            val canOverlay = SystemPermissionHelper.hasOverlayPermission(this)
             if (AttendanceAccessibilityService.isRunning && canOverlay && !FloatingBubbleService.isRunning) {
                 val intent = Intent(this, FloatingBubbleService::class.java)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -82,6 +91,61 @@ class MainActivity : FlutterActivity() {
                         } catch (e: Exception) {
                             result.error("ERROR", e.localizedMessage, null)
                         }
+                    }
+
+                    "checkAndRequestSystemPermissions" -> {
+                        val requiredFor = call.argument<String>("requiredFor") ?: "automation"
+                        val showOverlayPopup = call.argument<Boolean>("showOverlayPopup") ?: true
+                        val missingList = SystemPermissionHelper.checkRequiredPermissions(context, requiredFor)
+
+                        if (missingList.isEmpty()) {
+                            result.success(mapOf("granted" to true))
+                        } else {
+                            val firstMissing = missingList.first()
+                            val hasOverlay = SystemPermissionHelper.hasOverlayPermission(context)
+                            val canShowOverlay = showOverlayPopup && hasOverlay && FloatingBubbleService.isRunning && firstMissing.key != SystemPermissionHelper.PERM_OVERLAY
+
+                            if (canShowOverlay) {
+                                FloatingBubbleService.showSystemPermissionPopup(
+                                    permissionKey = firstMissing.key,
+                                    title = firstMissing.title,
+                                    reason = firstMissing.reason
+                                )
+                            }
+
+                            result.success(
+                                mapOf(
+                                    "granted" to false,
+                                    "missing" to firstMissing.key,
+                                    "title" to firstMissing.title,
+                                    "reason" to firstMissing.reason,
+                                    "popupShown" to canShowOverlay
+                                )
+                            )
+                        }
+                    }
+
+                    "openSystemPermissionSettings" -> {
+                        val permKey = call.argument<String>("permission") ?: SystemPermissionHelper.PERM_OVERLAY
+                        SystemPermissionHelper.openSettingsForPermission(context, permKey, activity = this@MainActivity)
+                        result.success(true)
+                    }
+
+                    "getSystemPermissionsStatus" -> {
+                        result.success(SystemPermissionHelper.getAllPermissionsStatus(context))
+                    }
+
+                    "hasNotificationPermission" -> {
+                        result.success(SystemPermissionHelper.hasNotificationPermission(context))
+                    }
+
+                    "requestNotificationPermission" -> {
+                        SystemPermissionHelper.openNotificationSettings(context, activity = this@MainActivity)
+                        result.success(true)
+                    }
+
+                    "isBatteryOptimizationIgnored" -> {
+                        result.success(SystemPermissionHelper.isBatteryOptimizationIgnored(context))
                     }
 
                     "canDrawOverlays" -> {
@@ -165,6 +229,15 @@ class MainActivity : FlutterActivity() {
                         val command = call.argument<String>("command")?.trim() ?: ""
                         val service = AttendanceAccessibilityService.instance
                         if (service == null) {
+                            val requirement = SystemPermissionHelper.getRequirementInfo(SystemPermissionHelper.PERM_ACCESSIBILITY)
+                            if (SystemPermissionHelper.hasOverlayPermission(context) && FloatingBubbleService.isRunning) {
+                                FloatingBubbleService.showSystemPermissionPopup(
+                                    permissionKey = requirement.key,
+                                    title = requirement.title,
+                                    reason = requirement.reason,
+                                    pendingCommand = command
+                                )
+                            }
                             val errMsg = "⚠️ Bot Error: Accessibility service is disabled."
                             FloatingBubbleService.updateStatusBubble(errMsg)
                             methodChannel?.invokeMethod("onBotFeedback", errMsg)

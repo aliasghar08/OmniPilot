@@ -135,6 +135,29 @@ class AssistantController {
   }) async {
     final args = call.args;
 
+    final automationTools = {
+      'inspectExternalAppScreen',
+      'checkExistingWrites',
+      'fillExternalAppFields',
+      'writeNoteInExternalApp',
+      'clickExternalAppElement',
+      'toggleExternalCheckable',
+      'scrollExternalAppScreen',
+      'navigateAndroidSystem',
+      'openExternalAndroidApp',
+      'researchAndWriteToExternalApp',
+    };
+
+    if (automationTools.contains(call.name)) {
+      final permitted = await AccessibilityBridge.ensureSystemPermissions(null, scope: 'automation');
+      if (!permitted) {
+        return {
+          'status': 'error',
+          'message': 'Required system permissions (Accessibility or Overlay) are disabled. Please enable them in Settings.',
+        };
+      }
+    }
+
     switch (call.name) {
       case 'inspectExternalAppScreen':
         final a11yStatus = await AccessibilityBridge.getAccessibilityStatus();

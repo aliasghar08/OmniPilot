@@ -73,6 +73,13 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 4, vsync: this, initialIndex: 0);
 
+    AccessibilityBridge.ensureHandlerRegistered();
+    AccessibilityBridge.onSystemPermissionsUpdated = (_) {
+      if (mounted) {
+        _checkPermissions();
+      }
+    };
+
     AppSettingsService.instance.init();
     _checkPermissions();
 
@@ -412,17 +419,12 @@ class _AttendanceScreenState extends State<AttendanceScreen>
   }
 
   Future<void> _toggleFloatingBubble() async {
-    if (!_canDrawOverlays) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please grant "Display over other apps" permission to show the floating assistant.'),
-            backgroundColor: Colors.amber,
-          ),
-        );
-      }
-      await AccessibilityBridge.requestOverlayPermission();
-      return;
+    if (!_isBubbleRunning) {
+      final permitted = await AccessibilityBridge.ensureSystemPermissions(
+        context,
+        scope: 'floating_bubble',
+      );
+      if (!permitted) return;
     }
 
     if (_isBubbleRunning) {

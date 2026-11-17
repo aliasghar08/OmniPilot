@@ -208,6 +208,19 @@ class FloatingBubbleService : Service() {
                 }
             }
         }
+
+        fun showSystemPermissionPopup(
+            permissionKey: String,
+            title: String,
+            reason: String,
+            pendingCommand: String? = null
+        ) {
+            instance?.let { service ->
+                Handler(Looper.getMainLooper()).post {
+                    service.renderSystemPermissionDialog(permissionKey, title, reason, pendingCommand)
+                }
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -1089,6 +1102,18 @@ class FloatingBubbleService : Service() {
     }
 
     private fun executeUserInstructionOverApp(prompt: String) {
+        if (!SystemPermissionHelper.hasAccessibilityPermission(this)) {
+            val req = SystemPermissionHelper.getRequirementInfo(SystemPermissionHelper.PERM_ACCESSIBILITY)
+            showSystemPermissionPopup(
+                permissionKey = req.key,
+                title = req.title,
+                reason = req.reason,
+                pendingCommand = prompt
+            )
+            updateStatusBubble("🔐 Accessibility service required.")
+            return
+        }
+
         promptInput?.setText("")
         addChatMessage("You", prompt)
         updateStatus("🤖 Running instruction on active app...\n\"$prompt\"")
@@ -1704,6 +1729,176 @@ class FloatingBubbleService : Service() {
         buttonRow.addView(allowAlwaysBtn)
         buttonRow.addView(allowOnceBtn)
         buttonRow.addView(denyBtn)
+        container.addView(buttonRow)
+
+        val screenWidth = resources.displayMetrics.widthPixels
+        val dialogWidth = (screenWidth * 0.90).toInt()
+
+        val params = WindowManager.LayoutParams(
+            dialogWidth,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            overlayLayoutType(),
+            WindowManager.LayoutParams.FLAG_DIM_BEHIND or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.CENTER
+            dimAmount = 0.55f
+        }
+
+        activeChoiceDialogView = container
+        try {
+            wm.addView(container, params)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun renderSystemPermissionDialog(
+        permissionKey: String,
+        title: String,
+        reason: String,
+        pendingCommand: String? = null
+    ) {
+        val wm = windowManager ?: (getSystemService(Context.WINDOW_SERVICE) as WindowManager)
+
+        // Dismiss previous dialog if one was open
+        activeChoiceDialogView?.let {
+            try {
+                wm.removeView(it)
+            } catch (_: Exception) {}
+            activeChoiceDialogView = null
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val padH = dp(20)
+            val padV = dp(18)
+            setPadding(padH, padV, padH, padV)
+            val bg = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(16).toFloat()
+                setColor(Color.parseColor("#1E1E2E"))
+                setStroke(dp(1), Color.parseColor("#38BDF8"))
+            }
+            background = bg
+            elevation = dp(16).toFloat()
+        }
+
+        // 1. Header: "🔐 System Permission Required"
+        val header = TextView(this).apply {
+            text = "🔐 System Permission Required"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, 0, 0, dp(6))
+        }
+        container.addView(header)
+
+        // 2. Permission Title Subheader
+        val titleTv = TextView(this).apply {
+            text = title
+            setTextColor(Color.parseColor("#38BDF8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, 0, 0, dp(12))
+        }
+        container.addView(titleTv)
+
+        // 3. Reason Box
+        val reasonBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val boxBg = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(10).toFloat()
+                setColor(Color.parseColor("#2A2A3C"))
+                setStroke(dp(1), Color.parseColor("#3E3E52"))
+            }
+            background = boxBg
+            val pad = dp(12)
+            setPadding(pad, pad, pad, pad)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(16)
+            }
+        }
+        val reasonTv = TextView(this).apply {
+            text = reason
+            setTextColor(Color.parseColor("#E2E8F0"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            setLineSpacing(0f, 1.25f)
+        }
+        reasonBox.addView(reasonTv)
+        container.addView(reasonBox)
+
+        // Dismiss helper
+        val dismissDialog = {
+            try {
+                wm.removeView(container)
+            } catch (_: Exception) {}
+            if (activeChoiceDialogView == container) {
+                activeChoiceDialogView = null
+            }
+        }
+
+        // 4. Action Buttons: "Grant Now" and "Later"
+        val buttonRow = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        val grantBtn = Button(this).apply {
+            text = "Grant Now"
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTypeface(typeface, Typeface.BOLD)
+            val btnBg = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(8).toFloat()
+                setColor(Color.parseColor("#2563EB"))
+            }
+            background = btnBg
+            val pad = dp(10)
+            setPadding(pad, pad, pad, pad)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(8)
+            }
+            setOnClickListener {
+                dismissDialog()
+                SystemPermissionHelper.setPendingPermission(permissionKey, pendingCommand)
+                SystemPermissionHelper.openSettingsForPermission(this@FloatingBubbleService, permissionKey)
+            }
+        }
+
+        val laterBtn = Button(this).apply {
+            text = "Later"
+            isAllCaps = false
+            setTextColor(Color.parseColor("#94A3B8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            val btnBg = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(8).toFloat()
+                setColor(Color.parseColor("#1F2937"))
+            }
+            background = btnBg
+            val pad = dp(8)
+            setPadding(pad, pad, pad, pad)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener {
+                dismissDialog()
+                updateStatusBubble("⚠️ Permission setup postponed.")
+            }
+        }
+
+        buttonRow.addView(grantBtn)
+        buttonRow.addView(laterBtn)
         container.addView(buttonRow)
 
         val screenWidth = resources.displayMetrics.widthPixels

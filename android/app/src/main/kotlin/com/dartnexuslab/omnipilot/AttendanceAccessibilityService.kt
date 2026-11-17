@@ -679,6 +679,12 @@ class AttendanceAccessibilityService : AccessibilityService() {
                 return feedback
             }
 
+            if (!SystemPermissionHelper.hasOverlayPermission(this)) {
+                feedback = "⚠️ Bot Error: Overlay permission is required."
+                sendBotFeedback(feedback)
+                return feedback
+            }
+
             val lower = trimmed.lowercase()
 
             // 1. App launch command
